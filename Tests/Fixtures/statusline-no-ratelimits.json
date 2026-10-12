@@ -1,0 +1,10 @@
+{
+  "hook_event_name": "Status",
+  "session_id": "0f0f0f0f-0000-0000-0000-000000000000",
+  "transcript_path": "/Users/example/.claude/projects/x/0f0f.jsonl",
+  "cwd": "/Users/example/work",
+  "model": { "id": "claude-sonnet-5-5", "display_name": "Sonnet" },
+  "workspace": { "current_dir": "/Users/example/work", "project_dir": "/Users/example/work" },
+  "version": "2.1.296",
+  "cost": { "total_cost_usd": 0.01 }
+}

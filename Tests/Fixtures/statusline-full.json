@@ -1,0 +1,35 @@
+{
+  "hook_event_name": "Status",
+  "session_id": "4f4ea72c-d657-4352-a139-ba18b373c441",
+  "transcript_path": "/Users/example/.claude/projects/-Users-example-secret-project/4f4ea72c.jsonl",
+  "cwd": "/Users/example/secret-project",
+  "model": { "id": "claude-opus-5-5", "display_name": "Opus" },
+  "workspace": {
+    "current_dir": "/Users/example/secret-project",
+    "project_dir": "/Users/example/secret-project",
+    "added_dirs": ["/Users/example/other-private-dir"]
+  },
+  "version": "2.1.296",
+  "output_style": { "name": "default" },
+  "cost": {
+    "total_cost_usd": 0.4242,
+    "total_duration_ms": 45000,
+    "total_api_duration_ms": 2300,
+    "total_lines_added": 156,
+    "total_lines_removed": 23
+  },
+  "context_window": {
+    "total_input_tokens": 15234,
+    "total_output_tokens": 4521,
+    "context_window_size": 200000,
+    "used_percentage": 9.5,
+    "current_usage": { "input_tokens": 8500, "output_tokens": 1200 }
+  },
+  "exceeds_200k_tokens": false,
+  "vim": { "mode": "NORMAL" },
+  "agent": { "name": "security-reviewer" },
+  "rate_limits": {
+    "five_hour": { "used_percentage": 23.4, "resets_at": 1791000000 },
+    "seven_day": { "used_percentage": 41, "resets_at": 1791500000 }
+  }
+}

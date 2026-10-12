@@ -1,0 +1,6 @@
+{
+  "loggedIn": true,
+  "authMethod": "claude.ai",
+  "email": "person@example.com",
+  "subscriptionType": "pro"
+}

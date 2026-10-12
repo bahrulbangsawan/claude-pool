@@ -1,0 +1,11 @@
+{
+  "loggedIn": true,
+  "authMethod": "api_key",
+  "email": "person@example.com",
+  "apiKeySource": "ANTHROPIC_API_KEY",
+  "accessToken": "sk-ant-oat01-SHOULD-NEVER-APPEAR",
+  "refresh_token": "SHOULD-NEVER-APPEAR",
+  "clientSecret": "SHOULD-NEVER-APPEAR",
+  "credentialPath": "/Users/example/.claude/SHOULD-NEVER-APPEAR",
+  "orgName": "Example Org"
+}

@@ -1,0 +1,10 @@
+{
+  "session_id": "1a1a1a1a-0000-0000-0000-000000000000",
+  "transcript_path": "/Users/example/.claude/projects/y/1a1a.jsonl",
+  "cwd": "/Users/example/work",
+  "version": "2.1.297",
+  "cost": { "total_cost_usd": 0.02 },
+  "rate_limits": {
+    "five_hour": { "used_percentage": 57, "resets_at": 1791003600 }
+  }
+}

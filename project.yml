@@ -1,0 +1,99 @@
+# XcodeGen spec. `make generate` turns this into ClaudePool.xcodeproj.
+# Bundle identifier com.example.claudepool is a placeholder; change it before distributing.
+name: ClaudePool
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: NO
+    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    GCC_TREAT_WARNINGS_AS_ERRORS: YES
+    SWIFT_STRICT_CONCURRENCY: complete
+targets:
+  PoolShared:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_NAME: PoolShared
+        SKIP_INSTALL: YES
+
+  claude-pool-collector:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Collector
+    dependencies:
+      - target: PoolShared
+    settings:
+      base:
+        PRODUCT_NAME: claude-pool-collector
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.claudepool.collector
+        SKIP_INSTALL: YES
+
+  ClaudePool:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+      - path: Resources/Assets.xcassets
+      - path: Resources/AppIcon.icns
+        buildPhase: resources
+    dependencies:
+      - target: PoolShared
+      - target: claude-pool-collector
+        link: false
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
+        codeSign: true
+    # No `info:` key: XcodeGen would regenerate (overwrite) Resources/Info.plist.
+    settings:
+      base:
+        PRODUCT_NAME: ClaudePool
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.claudepool
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Resources/Info.plist
+        ENABLE_APP_SANDBOX: NO
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: ""
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+
+  ClaudePoolTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/ClaudePoolTests
+    dependencies:
+      - target: ClaudePool
+      - target: PoolShared
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/ClaudePool.app/Contents/MacOS/ClaudePool"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.claudepool.tests
+
+schemes:
+  ClaudePool:
+    build:
+      targets:
+        ClaudePool: all
+        claude-pool-collector: all
+        ClaudePoolTests: [test]
+    test:
+      targets:
+        - ClaudePoolTests
+      environmentVariables:
+        CLAUDE_POOL_COLLECTOR_PATH: "$(BUILT_PRODUCTS_DIR)/claude-pool-collector"
