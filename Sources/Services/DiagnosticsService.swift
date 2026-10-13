@@ -29,6 +29,8 @@ struct DiagnosticsInput: Sendable {
     var authErrors: [UUID: String]
     var trackingStates: [UUID: TrackingState]
     var collectorState: CollectorInstallState
+    /// Paths under this folder are shown as `~/…`, like the rest of the app.
+    var homePath: String?
 }
 
 struct DiagnosticsService: Sendable {
@@ -78,7 +80,7 @@ struct DiagnosticsService: Sendable {
         if let binary = input.binary {
             checks.append(DiagnosticCheck(
                 id: "binary", title: "Claude Code binary", status: binary.version == nil ? .warn : .pass,
-                detail: "\(binary.path) (\(binary.source.rawValue))" + (binary.version.map { " — \($0)" } ?? " — version unknown"),
+                detail: "\(abbreviate(binary.path, home: input.homePath)) (\(binary.source.rawValue))" + (binary.version.map { " — \($0)" } ?? " — version unknown"),
                 fix: binary.version == nil ? "Run the binary once in Terminal to check it works, or set the path in Settings." : nil
             ))
         } else {
@@ -157,7 +159,7 @@ struct DiagnosticsService: Sendable {
             let ok = known && exists && value.hasPrefix("/")
             checks.append(DiagnosticCheck(
                 id: "pointer", title: "Active profile pointer", status: ok ? .pass : .fail,
-                detail: ok ? "Points to \(value)." : "Points to \(value), which is \(exists ? "not a registered profile" : "missing").",
+                detail: ok ? "Points to \(abbreviate(value, home: input.homePath))." : "Points to \(abbreviate(value, home: input.homePath)), which is \(exists ? "not a registered profile" : "missing").",
                 fix: ok ? nil : "Select a profile in the menu to rewrite it."
             ))
         } else {
@@ -193,6 +195,12 @@ struct DiagnosticsService: Sendable {
             fix: "If a tracked profile never gets data, check those conditions in that project."
         ))
         return checks
+    }
+
+    private static func abbreviate(_ path: String, home: String?) -> String {
+        guard let home else { return path }
+        if path == home { return "~" }
+        return path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
     }
 
     private static func profileChecks(_ profile: Profile, input: DiagnosticsInput) -> [DiagnosticCheck] {

@@ -1,21 +1,158 @@
-<p align="center"><img src="Resources/AppIcon-1024.png" width="128" alt=""></p>
+<p align="center"><img src="Resources/AppIcon-1024.png" width="160" alt="Claude Pool icon: a pixel crab in a swim ring"></p>
 
-# Claude Pool
+<h1 align="center">Claude Pool</h1>
 
-A native macOS menu bar app for people who use more than one Claude Code account. It:
+<p align="center">
+A native macOS menu bar app for people who use more than one Claude Code account.<br>
+Switch accounts without <code>/logout</code>, see every account's limits at a glance, and keep sessions on the right account.
+</p>
 
-1. **Switches accounts** for new `claude` launches, without `/logout` and `/login`, by choosing which `CLAUDE_CONFIG_DIR` they get — and verifies the switch is in effect.
-2. **Shows which account every running session uses**, and moves a conversation to another account on request (copy + `claude --resume`; see *Sessions and handoff*).
-3. **Signs accounts in without Terminal**, by driving Claude Code's own `claude auth login`.
-4. **Shows each account's plan** as specifically as Claude Code's data allows (Pro, Max 5x, Max 20x, Team seat …) and its **subscription usage windows** (5-hour and 7-day) exactly as Claude Code reported them, including when a limit is reached and when it resets.
-5. **Analyses recorded token usage** (input, output, cache read, cache write, requests) per account and model over 24 hours, 7 days and 30 days.
-6. **Manages the Claude Code status line** with a visual editor, themes, Powerline, presets and per-profile apply/revert.
-7. **Shows the active account's limits in the menu bar** (`Work · 5h:23% · 7d:41%`) and, opt-in, **notifies you near and at a limit** and **names the account with the most room left**. You still make every switch.
-8. **Shows CPU and memory** of the Mac (menu bar and panel) and of every running `claude` session (Sessions page and panel).
+<p align="center">
+<a href="https://github.com/bahrulbangsawan/claude-pool/releases/latest"><b>Download the latest release</b></a> · macOS 14+ · Apple silicon
+</p>
 
-"Pool" means a pool of separately signed-in accounts that **you** switch between by hand. Claude Pool does not pool, combine, rotate or load-balance usage limits, and it never switches for you. The limit alerts and the suggestion are off by default and only inform you: Anthropic's Usage Policy forbids intentionally bypassing restrictions in its products, and automatic switching to keep going past a limit would come too close to that.
+<p align="center"><img src="docs/screenshots/overview.png" width="880" alt="Claude Pool overview window in dark mode"></p>
 
-> Unofficial utility. Not affiliated with or endorsed by Anthropic. No Anthropic or Claude brand assets are used. The app icon and menu bar mark are original artwork (a ring of three account segments around the active dot, see *Branding*); all other icons are SF Symbols.
+> Unofficial utility. Not affiliated with or endorsed by Anthropic. The app icon and avatars are original pixel art of a crab, inspired by the Claude Code mascot; all other icons are SF Symbols.
+
+**"Pool"** means a pool of separately signed-in accounts that **you** switch between by hand. Claude Pool does not pool, combine, rotate or load-balance usage limits, and it never switches for you. The limit alerts and the suggestion are off by default and only inform you: Anthropic's Usage Policy forbids intentionally bypassing restrictions in its products, and automatic switching to keep going past a limit would come too close to that.
+
+## Contents
+
+- [Features](#features)
+  - [Menu bar](#menu-bar)
+  - [Overview](#overview)
+  - [Profiles and usage history](#profiles-and-usage-history)
+  - [Sign in without Terminal](#sign-in-without-terminal)
+  - [Sessions and handoff](#sessions-and-handoff)
+  - [Usage analytics](#usage-analytics)
+  - [Status line manager](#status-line-manager)
+  - [Usage tracking (opt-in)](#usage-tracking-opt-in)
+  - [Limit alerts and suggestion (opt-in)](#limit-alerts-and-suggestion-opt-in)
+  - [Diagnostics](#diagnostics)
+  - [Settings](#settings)
+- [Install](#install)
+- [Getting started](#getting-started)
+- [How it works](#how-it-works)
+- [Requirements](#requirements) · [Build, test, run](#build-test-run) · [Files](#files) · [Limitations](#limitations) · [Troubleshooting](#troubleshooting-by-diagnostics-check)
+
+---
+
+## Features
+
+### Menu bar
+
+<p align="center"><img src="docs/screenshots/menubar-label.png" width="420" alt="Menu bar label with the crab mark, active profile and usage"></p>
+
+The menu bar shows the pixel-crab mark, the active profile and its limits (`Work · 5h:23% · 7d:41%`), and optionally this Mac's CPU and memory. Each part can be turned off in Settings.
+
+<p align="center"><img src="docs/screenshots/menu.png" width="340" alt="Menu bar panel listing every profile with its 5-hour and 7-day usage"></p>
+
+Click it for the panel:
+
+- **Active profile** and a verified line naming the account new `claude` launches will use.
+- **Every profile** with its 5-hour and 7-day bars, how fresh the values are, and a Terminal button. Click a row (or press ⌘1–⌘9) to make it active.
+- A warning when a **running session uses another account**, and when **Diagnostics** need attention.
+- **CPU and memory** of this Mac and of all running `claude` sessions.
+
+### Overview
+
+<p align="center"><img src="docs/screenshots/overview.png" width="880" alt="Overview page"></p>
+
+The Overview shows the active account in detail: email, organisation, plan, both usage rings with reset times, and whether switching is fully in effect (for example, a warning if the shell integration isn't installed). **All Accounts** lists every profile as a card with its plan, sign-in state, running sessions and usage bars, always in your own order.
+
+### Profiles and usage history
+
+<p align="center"><img src="docs/screenshots/profile-work.png" width="880" alt="Profile page with usage rings, running sessions and history"></p>
+
+Each profile is one Claude Code config directory with its own sign-in. Its page shows:
+
+- **Set Active** and **Open Terminal** (runs `claude` with that profile, even without the shell integration).
+- The plan, as specifically as Claude Code's data allows (Pro, Max 5x, Max 20x, Team seat …).
+- The **5-hour and 7-day windows** exactly as Claude Code reported them, with when they reset and how old the values are. Usage is never estimated.
+- The profile's **running sessions**.
+- A **history** chart of observed values over 24 hours or 7 days. Hover snaps to a real observation.
+
+<p align="center"><img src="docs/screenshots/chart-hover.png" width="720" alt="Usage history chart with a hover tooltip"></p>
+
+### Sign in without Terminal
+
+<p align="center">
+<img src="docs/screenshots/sheet-add-account.png" width="420" alt="Add Account sheet">
+&nbsp;
+<img src="docs/screenshots/sheet-signin.png" width="460" alt="In-app sign-in sheet waiting for authorization">
+</p>
+
+**Add Account** creates a profile directory and signs it in by driving Claude Code's own `claude auth login`. Open the link in your browser (it completes on its own), or copy it and paste the code back. A 10-minute countdown, Cancel and **Start Again** are built in, and a duplicate account is flagged. **Sign In with Terminal** is still available, and **Adopt Existing…** picks up directories such as `~/.claude-work` you already have.
+
+### Sessions and handoff
+
+<p align="center"><img src="docs/screenshots/sessions.png" width="880" alt="Sessions page grouped by profile"></p>
+
+The Sessions page lists every running `claude` process grouped by profile, with its folder, state (busy, idle), version, CPU and memory, and flags any session that isn't on the active account. A running session can never change accounts (see [why](#why-a-switch-cant-change-a-running-session-root-cause)), so instead:
+
+<p align="center"><img src="docs/screenshots/sheet-handoff.png" width="520" alt="Continue On sheet for moving a conversation to another account"></p>
+
+**Continue On…** copies the conversation into the other profile and opens Terminal running `claude --resume` there. The original session is left running until you **End…** it, and the handoff is marked **Confirmed** only when Claude Code registers the resumed session under the new profile.
+
+### Usage analytics
+
+<p align="center"><img src="docs/screenshots/analytics.png" width="880" alt="Usage Analytics page with token totals and a stacked chart"></p>
+
+Token usage that Claude Code recorded on this Mac (input, output, cache write, cache read, and requests) per account and model, over the last 24 hours, 7 days or 30 days, compared with the previous period. Responses are deduplicated, only usage numbers are read, and the index updates incrementally whenever Claude Code is active. Token counts are not subscription quota; the windows are shown separately.
+
+### Status line manager
+
+<p align="center"><img src="docs/screenshots/statusline.png" width="880" alt="Status line editor with live preview"></p>
+
+Design the line Claude Code shows under the prompt: drag components onto lines, choose colours, themes, separators and Powerline, preview it live with each profile's real account, plan and usage, and apply it to the profiles you choose. **Undo Last Apply**, saved presets and ccstatusline import are included. Components include model, account, plan, folder, git branch and status, context, cost, 5-hour and 7-day usage and reset countdowns, effort, and your original status line.
+
+### Usage tracking (opt-in)
+
+<p align="center"><img src="docs/screenshots/sheet-tracking.png" width="560" alt="Confirmation sheet showing the statusLine value before and after"></p>
+
+Usage windows come from Claude Code's own status line data. Turning tracking on for a profile shows the exact `statusLine` change **before and after**, backs up `settings.json` first, and keeps your existing status line working. The bundled helper reads only the rate-limit fields, stores them on this Mac, and makes no network calls. Turning tracking off restores the original exactly. Details: [Usage tracking](#usage-tracking-opt-in-per-profile) and [The tracking opt-in](#the-tracking-opt-in).
+
+### Limit alerts and suggestion (opt-in)
+
+<p align="center"><img src="docs/screenshots/menu-suggestion.png" width="340" alt="Menu panel suggesting the account with the most room left"></p>
+
+Both are off by default (Settings › Limit Alerts). **Notify near and at a limit** sends one notification per window per reset period. **Suggest the account with the most room** shows, while the active account is close to a limit, the signed-in profile with the lowest reported usage, with a **Switch** button. Nothing ever switches on its own.
+
+### Diagnostics
+
+<p align="center"><img src="docs/screenshots/diagnostics.png" width="880" alt="Diagnostics page with passed, warning and failed checks"></p>
+
+One page checks everything switching and tracking depend on: the Claude Code binary, the shell integration, globally exported credential variables (names only, never values), the active-profile pointer, profile directories, the usage collector, and each profile's sign-in, sign-in method, config isolation and tracking. Every warning comes with a fix. See [Troubleshooting](#troubleshooting-by-diagnostics-check).
+
+### Settings
+
+<p align="center"><img src="docs/screenshots/settings.png" width="880" alt="Settings page"></p>
+
+Install or remove the shell integration (or copy the snippet), point to a custom `claude` binary, set the working directory for new Terminal windows, choose what the menu bar shows, configure limit alerts, the collector's output, and launch at login.
+
+---
+
+## Install
+
+1. Download `ClaudePool-<version>.dmg` from the [latest release](https://github.com/bahrulbangsawan/claude-pool/releases/latest).
+2. Open it and drag **Claude Pool** to **Applications**.
+3. The app is ad-hoc signed and not notarized, so the first launch is blocked by Gatekeeper. Right-click the app › **Open**, or run:
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/ClaudePool.app
+   ```
+
+Or build it yourself: see [Build, test, run](#build-test-run).
+
+## Getting started
+
+1. Click the crab in the menu bar › **Open Claude Pool…**. Your existing `~/.claude` sign-in is already there as **Default**.
+2. **Add Account** › enter a name. The directory defaults to `~/.claude-<name>` (mode 0700). Sign in in the sheet, in your browser.
+3. Click a profile › **Set Active**. Claude Pool verifies the switch and tells you which account new launches will use.
+4. Install the shell integration (**Settings › Shell Integration › Install…**) so a plain `claude` in any new terminal follows the active profile. Without it, use **Open Terminal**.
+5. Optionally turn on **Usage tracking** for each profile to see its 5-hour and 7-day windows, then start a `claude` session and send one message.
+
+Run `/status` inside `claude` to see which account a session is using.
 
 ---
 
@@ -90,6 +227,7 @@ When you enable tracking for a profile, Claude Pool points that profile's `statu
 
 - decodes **only** `rate_limits.five_hour`, `rate_limits.seven_day` and `version`. No other field is declared in its decoder.
 - merges them into `~/.claude-pool/usage/<profile-UUID>.json`. A window that is absent keeps its previous value, and the observation time is recorded.
+- ignores stale reports. Every session of a profile runs the helper, and an idle session keeps re-sending the values from its last API response. Within one window usage never goes down, so a lower value for the same reset time, or a window that has already ended, is dropped instead of overwriting the newer value.
 - appends a history line when the values change, or at most every 5 minutes.
 - prints your **original** status line if you had one (it runs your command with the same stdin, with a 2-second timeout). Otherwise it prints a short summary such as `5h 23% · 7d 41%`, or nothing, depending on Settings.
 - never writes to stdout on error and always exits 0. It makes no network access and runs in about 5–10 ms.
@@ -143,7 +281,7 @@ make build         # → build/ClaudePool.app (ad-hoc signed, Hardened Runtime)
 make test          # unit + subprocess tests (Swift Testing)
 make static-check  # forbidden-API grep + binary symbol check
 make live-check    # read-only audit against your real claude, Keychain sign-ins and login shell
-make snapshots     # renders every screen (light, dark, narrowest width) to build/snapshots
+make snapshots     # renders every screen (light, dark, narrowest width) to build/snapshots; the README images are the dark set
 make run           # build and open the app
 make dmg           # → build/ClaudePool-<version>.dmg (app + Applications link)
 make version       # prints the version and build number, e.g. 1.1.0 (build 2)
@@ -160,21 +298,11 @@ Override with `BUILD_SYSTEM=xcode` or `BUILD_SYSTEM=swiftpm`. Builds use warning
 
 Copy `build/ClaudePool.app` to `/Applications` if you want it to launch at login, or open the DMG and drag it there.
 
-**Branding.** `scripts/make-icon.swift` draws the app icon in code and writes `Resources/AppIcon.icns` plus a 1024 px `AppIcon-1024.png` preview; `make icon` reruns it. The menu bar mark (`Sources/Views/BrandMark.swift`) uses the same geometry as a monochrome template image, so macOS tints it for light and dark menu bars. The DMG uses the icon as its volume icon.
+**Branding.** The mascot is a retro pixel crab on a 14 × 10 grid. `scripts/make-icon.swift` draws the app icon in code (the crab in a striped swim ring, floating in pool water with rising bubbles) and writes `Resources/AppIcon.icns` plus a 1024 px `AppIcon-1024.png` preview; `make icon` reruns it. `PixelCrab` in `Sources/Views/BrandMark.swift` holds the same grid (keep the two in sync); it draws the monochrome menu bar mark, which macOS tints for light and dark menu bars, and the crab on every profile avatar. The DMG uses the icon as its volume icon.
 
 **Versions.** The version lives in `Resources/Info.plist` (`CFBundleShortVersionString`, plus the build number `CFBundleVersion`), and every build reads it from there. The installed app shows it in Settings › About ("Version 1.1.0 (2)"), and Finder shows it in Get Info.
 
 **DMG on other Macs.** The app is ad-hoc signed and not notarized, so Gatekeeper blocks the first launch on another Mac: right-click the app › Open, or run `xattr -dr com.apple.quarantine /Applications/ClaudePool.app`. Opening it without warnings on other Macs needs an Apple Developer ID certificate and notarization.
-
-## First sign-in for a new profile
-
-1. Menu bar → **Open Claude Pool…** → **Profiles** → **+**. Enter a name; the directory defaults to `~/.claude-<slug>` and is created with mode 0700.
-2. Click **Sign in now** (or **Sign In / Verify** later). Terminal opens running `claude` with that profile's environment.
-3. In Claude Code, run **`/login`** and complete Anthropic's own sign-in flow. Claude Pool never authenticates by itself.
-4. Run **`/status`** to confirm the account. About 30 seconds later the app re-checks the sign-in status, or you can click Refresh.
-5. Optionally install the shell integration (**Settings → Shell integration → Install / Update…**) so a plain `claude` in any new terminal follows the active profile.
-
-Already have directories such as `~/.claude-work`? Use **Profiles → Adopt Existing…**.
 
 ## The tracking opt-in
 

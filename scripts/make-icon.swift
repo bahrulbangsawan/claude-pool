@@ -1,5 +1,5 @@
 // Draws the Claude Pool app icon and writes Resources/AppIcon.icns (plus a 1024 px PNG preview).
-// Original artwork: a ring of three account segments around the active dot, on deep indigo.
+// Original artwork: a retro pixel crab floating in a swim ring, in pool water with rising bubbles.
 // Usage: swift scripts/make-icon.swift [output-directory]   (default: Resources)
 import AppKit
 
@@ -24,6 +24,21 @@ func squircle(in rect: CGRect) -> CGPath {
     return path
 }
 
+/// The mascot: a retro pixel crab. Keep in sync with `PixelCrab.rows` in Sources/Views/BrandMark.swift.
+/// `#` body, `e` eye, `.` empty.
+let crab = [
+    "#.#........#.#",
+    "###........###",
+    ".#..........#.",
+    ".############.",
+    ".###e####e###.",
+    ".###e####e###.",
+    ".############.",
+    ".############.",
+    "..#.#....#.#..",
+    "..#.#....#.#..",
+]
+
 /// Draws the icon into a 1024 x 1024 coordinate space.
 func drawIcon(_ ctx: CGContext) {
     let space = CGColorSpace(name: CGColorSpace.sRGB)!
@@ -34,65 +49,86 @@ func drawIcon(_ ctx: CGContext) {
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: color(0x000000, 0.35))
     ctx.addPath(shape)
-    ctx.setFillColor(color(0x0B1130))
+    ctx.setFillColor(color(0x0B3A66))
     ctx.fillPath()
     ctx.restoreGState()
 
     ctx.saveGState()
     ctx.addPath(shape)
     ctx.clip()
-    // Deep indigo, lighter at the top.
-    let background = CGGradient(colorsSpace: space, colors: [color(0x2A3A7A), color(0x141B45), color(0x0A0F2C)] as CFArray, locations: [0, 0.55, 1])!
+    // Pool water, lighter at the top.
+    let background = CGGradient(colorsSpace: space, colors: [color(0x4CCBE6), color(0x1A86C4), color(0x0B4785)] as CFArray, locations: [0, 0.55, 1])!
     ctx.drawLinearGradient(background, start: CGPoint(x: 512, y: 924), end: CGPoint(x: 512, y: 100), options: [])
-    // Soft light behind the ring.
-    let glow = CGGradient(colorsSpace: space, colors: [color(0x6D8BFF, 0.30), color(0x6D8BFF, 0)] as CFArray, locations: [0, 1])!
-    ctx.drawRadialGradient(glow, startCenter: CGPoint(x: 512, y: 540), startRadius: 0, endCenter: CGPoint(x: 512, y: 540), endRadius: 420, options: [])
-    // Thin top highlight along the edge.
-    ctx.addPath(shape)
-    ctx.setStrokeColor(color(0xFFFFFF, 0.10))
-    ctx.setLineWidth(6)
-    ctx.strokePath()
-    ctx.restoreGState()
 
-    // Three account segments, clockwise from the top, with round caps and even gaps.
-    let center = CGPoint(x: 512, y: 512), radius: CGFloat = 238, width: CGFloat = 88
-    let segments: [(UInt32, UInt32)] = [(0x5EEAD4, 0x2DD4BF), (0x7DB4FF, 0x4F8DFB), (0xC4A5FF, 0x9B7BF7)]
-    let gap = 10.0 * .pi / 180 + Double(width / radius)   // 10° gap after the round caps
-    for (index, (light, dark)) in segments.enumerated() {
-        let middle = .pi / 2 - Double(index) * 2 * .pi / 3
-        let start = middle + (2 * .pi / 3 - gap) / 2
-        let end = middle - (2 * .pi / 3 - gap) / 2
-        let arc = CGMutablePath()
-        arc.addArc(center: center, radius: radius, startAngle: start, endAngle: end, clockwise: true)
-        let stroke = arc.copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round, miterLimit: 10)
-        ctx.saveGState()
-        ctx.setShadow(offset: .zero, blur: 30, color: color(dark, 0.55))
-        ctx.addPath(stroke)
-        ctx.setFillColor(color(dark))
-        ctx.fillPath()
-        ctx.restoreGState()
-        ctx.saveGState()
-        ctx.addPath(stroke)
-        ctx.clip()
-        let mid = (start + end) / 2
-        let outer = CGPoint(x: center.x + cos(mid) * (radius + width), y: center.y + sin(mid) * (radius + width))
-        let segmentGradient = CGGradient(colorsSpace: space, colors: [color(light), color(dark)] as CFArray, locations: [0, 1])!
-        ctx.drawLinearGradient(segmentGradient, start: outer, end: center, options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
-        ctx.restoreGState()
+    // From here on, draw top-down on a pixel grid.
+    ctx.translateBy(x: 0, y: 1024)
+    ctx.scaleBy(x: 1, y: -1)
+    let cell: CGFloat = 44
+    func pixel(_ x: CGFloat, _ y: CGFloat, _ hex: UInt32, _ alpha: CGFloat = 1, w: CGFloat = 1, h: CGFloat = 1) {
+        ctx.setFillColor(color(hex, alpha))
+        ctx.fill(CGRect(x: x, y: y, width: cell * w, height: cell * h))
     }
 
-    // The active account: a bright dot in the middle.
-    ctx.saveGState()
-    ctx.setShadow(offset: .zero, blur: 50, color: color(0xFFFFFF, 0.55))
-    ctx.addEllipse(in: CGRect(x: center.x - 64, y: center.y - 64, width: 128, height: 128))
-    ctx.setFillColor(color(0xFFFFFF))
-    ctx.fillPath()
+    // Pool tiles: faint grout lines.
+    ctx.setFillColor(color(0xFFFFFF, 0.07))
+    for i in stride(from: 100 as CGFloat, through: 924, by: cell * 2) {
+        ctx.fill(CGRect(x: i, y: 100, width: 4, height: 824))
+        ctx.fill(CGRect(x: 100, y: i, width: 824, height: 4))
+    }
+
+    // The crab, Claude orange with a lit top row and a shaded bottom row.
+    let originX: CGFloat = 512 - cell * 7, originY: CGFloat = 292
+    for (row, line) in crab.enumerated() {
+        for (col, mark) in line.enumerated() {
+            let x = originX + CGFloat(col) * cell, y = originY + CGFloat(row) * cell
+            switch mark {
+            case "#":
+                let hex: UInt32 = row == 3 || row <= 1 ? 0xEE936F : (row == 7 || row >= 8 ? 0xB65A3C : 0xD97757)
+                pixel(x, y, hex)
+            case "e":
+                pixel(x, y, 0x1A1410)
+            default: break
+            }
+        }
+    }
+    // Eye shine.
+    for col in [4, 9] { pixel(originX + CGFloat(col) * cell + cell * 0.5, originY + 4 * cell, 0xFFFFFF, 0.9, w: 0.5, h: 0.5) }
+
+    // Swim ring around the belly: red and white stripes, one cell wider than the body on each side.
+    let ringY = originY + 6 * cell
+    for col in -1...14 {
+        let stripe: UInt32 = ((col + 1) / 2) % 2 == 0 ? 0xF4F1EA : 0xE5484D
+        pixel(originX + CGFloat(col) * cell, ringY, stripe, h: 2)
+    }
+    pixel(originX - cell, ringY, 0xFFFFFF, 0.35, w: 16, h: 0.25)
+
+    // Water surface: gentle stepped waves over the lower ring and legs, with a foam crest.
+    let waterTop = ringY + cell
+    for i in 0..<20 {
+        let x = 100 + CGFloat(i) * cell
+        let top = waterTop + [0, 0, -0.25, -0.25, 0, 0, 0.25, 0.25][i % 8] * cell
+        pixel(x, top, 0x0A4F8C, 0.5, h: (924 - top) / cell)
+        pixel(x, top, 0xFFFFFF, 0.9, h: 0.22)
+    }
+    // Ripples below the surface.
+    for (col, row) in [(0, 2.0), (1, 2.0), (12, 2.5), (13, 2.5), (6, 4.0), (7, 4.0), (8, 4.0)] as [(Int, CGFloat)] {
+        pixel(originX + CGFloat(col) * cell, waterTop + row * cell, 0xFFFFFF, 0.28, h: 0.22)
+    }
+
+    // Bubbles rising from the pool: one per account in the pool.
+    for (x, y, size) in [(800.0, 236.0, 0.75), (848.0, 330.0, 0.5), (744.0, 168.0, 0.5)] as [(CGFloat, CGFloat, CGFloat)] {
+        pixel(x, y, 0xFFFFFF, 0.75, w: size, h: size)
+    }
     ctx.restoreGState()
-    let dot = CGGradient(colorsSpace: space, colors: [color(0xFFFFFF), color(0xDCE6FF)] as CFArray, locations: [0, 1])!
+
+    // Thin highlight along the edge.
     ctx.saveGState()
-    ctx.addEllipse(in: CGRect(x: center.x - 64, y: center.y - 64, width: 128, height: 128))
+    ctx.addPath(shape)
     ctx.clip()
-    ctx.drawLinearGradient(dot, start: CGPoint(x: 512, y: 576), end: CGPoint(x: 512, y: 448), options: [])
+    ctx.addPath(shape)
+    ctx.setStrokeColor(color(0xFFFFFF, 0.12))
+    ctx.setLineWidth(6)
+    ctx.strokePath()
     ctx.restoreGState()
 }
 

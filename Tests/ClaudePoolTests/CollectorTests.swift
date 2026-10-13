@@ -94,6 +94,28 @@ import Testing
         #expect(third.lastSeenAt >= second.lastSeenAt)
     }
 
+    @Test func staleReportsFromIdleSessionsAreIgnored() throws {
+        let reset = Int(Date().addingTimeInterval(3 * 86_400).timeIntervalSince1970)
+        func sevenDay(_ used: Int, resetsAt: Int) -> Data {
+            Data(#"{"rate_limits":{"seven_day":{"used_percentage":\#(used),"resets_at":\#(resetsAt)}}}"#.utf8)
+        }
+        try run(sevenDay(99, resetsAt: reset))
+        let live = try snapshot()
+
+        try run(sevenDay(6, resetsAt: reset))
+        try run(sevenDay(31, resetsAt: reset))
+        let afterStale = try snapshot()
+        #expect(afterStale.sevenDay?.usedPercentage == 99, "lower values for the same window are old reports")
+        #expect(afterStale.observedAt == live.observedAt)
+        #expect(historyLines().count == 1)
+
+        try run(sevenDay(50, resetsAt: reset - 7 * 86_400))
+        #expect(try snapshot().sevenDay?.usedPercentage == 99, "a window that already ended is ignored")
+
+        try run(sevenDay(2, resetsAt: reset + 7 * 86_400))
+        #expect(try snapshot().sevenDay?.usedPercentage == 2, "a later window replaces the stored one")
+    }
+
     @Test func runWithoutWindowsRecordsLastSeenOnly() throws {
         try run(Fixtures.data("statusline-no-ratelimits.json"))
         let snap = try snapshot()

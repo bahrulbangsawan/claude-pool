@@ -260,7 +260,7 @@ struct SettingsView: View {
         } content: {
             VStack(spacing: Space.xs) {
                 FactRow(label: "Path") {
-                    Text(model.binary?.path ?? "—").font(.rowDetail.monospaced()).textSelection(.enabled)
+                    Text(model.binary.map { model.paths.abbreviate($0.path) } ?? "—").font(.rowDetail.monospaced()).textSelection(.enabled)
                 }
                 Divider()
                 FactRow(label: "Version") { Text(model.binary?.version ?? "—") }

@@ -208,22 +208,22 @@ struct FactRow<Value: View>: View {
 
 // MARK: - Small components
 
-/// Coloured circle with the profile's initial. Decorative: the name is always shown beside it.
+/// Coloured circle with the pixel crab mascot. Decorative: the name is always shown beside it.
 struct ProfileAvatar: View {
     let name: String
     let colorHex: String
     var size: CGFloat = 24
 
     var body: some View {
-        let initial = name.trimmingCharacters(in: .whitespaces).first.map { String($0).uppercased() } ?? "?"
         Circle()
             .fill(Color(hex: colorHex).gradient)
             .frame(width: size, height: size)
             .overlay(
-                Text(initial)
-                    .font(.system(size: size * 0.46, weight: .semibold, design: .rounded))
-                    // Dark initial on light swatches (yellow, teal), white on the rest.
-                    .foregroundStyle(Color.luminance(hex: colorHex) > 0.45 ? Color.black.opacity(0.75) : Color.white)
+                PixelCrabShape()
+                    // Dark crab on light swatches (yellow, teal), white on the rest.
+                    .fill(Color.luminance(hex: colorHex) > 0.45 ? Color.black.opacity(0.75) : Color.white)
+                    .frame(width: size * 0.66, height: size * 0.66)
+                    .offset(y: size * 0.02)
             )
             .accessibilityHidden(true)
     }

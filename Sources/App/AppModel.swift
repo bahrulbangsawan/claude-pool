@@ -610,7 +610,8 @@ final class AppModel {
             authStatuses: authStore.statuses,
             authErrors: authStore.errors,
             trackingStates: trackingStates,
-            collectorState: collectorState
+            collectorState: collectorState,
+            homePath: paths.userHome.path
         )
         diagnostics = DiagnosticsService.evaluate(input)
         diagnosticsRunAt = Date()

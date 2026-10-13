@@ -16,16 +16,37 @@ struct SnapshotWriter {
         var snapshot = loadSnapshot() ?? UsageSnapshot(profileId: profileID, lastSeenAt: now)
         snapshot.schema = UsageSnapshot.currentSchema
         snapshot.profileId = profileID
-        if let window = input.fiveHour { snapshot.fiveHour = Self.usageWindow(window) }
-        if let window = input.sevenDay { snapshot.sevenDay = Self.usageWindow(window) }
+        let fiveHour = input.fiveHour.flatMap { Self.fresh($0, over: snapshot.fiveHour, now: now) }
+        let sevenDay = input.sevenDay.flatMap { Self.fresh($0, over: snapshot.sevenDay, now: now) }
+        if let fiveHour { snapshot.fiveHour = Self.usageWindow(fiveHour) }
+        if let sevenDay { snapshot.sevenDay = Self.usageWindow(sevenDay) }
         snapshot.lastSeenAt = now
-        if input.hasAnyWindow { snapshot.observedAt = now }
+        if fiveHour != nil || sevenDay != nil { snapshot.observedAt = now }
         if let version = input.version { snapshot.claudeVersion = String(version.prefix(64)) }
 
         let data = try UsageCoding.makeEncoder().encode(snapshot)
         try AtomicFile.write(data, to: paths.snapshot(for: profileID), permissions: 0o600)
 
-        if input.hasAnyWindow { try appendHistoryIfNeeded(input) }
+        if fiveHour != nil || sevenDay != nil { try appendHistoryIfNeeded(fiveHour: fiveHour, sevenDay: sevenDay) }
+    }
+
+    /// Reset times closer than this are treated as the same window.
+    static let sameWindowTolerance: TimeInterval = 60
+
+    /// Returns `incoming` unless it is a stale report of the stored window.
+    ///
+    /// Every session sharing a config directory runs the collector, and an idle session keeps
+    /// re-reporting the rate limits from its last API response. Within one window usage never
+    /// goes down, so a lower value for the same reset time is an old report and is dropped.
+    static func fresh(_ incoming: RateLimitInput.Window, over stored: UsageWindow?, now: Date) -> RateLimitInput.Window? {
+        guard let stored else { return incoming }
+        let storedReset = stored.resetsAt.timeIntervalSince1970
+        if storedReset <= now.timeIntervalSince1970 { return incoming }
+        if abs(incoming.resetsAt - storedReset) < sameWindowTolerance {
+            return incoming.usedPercentage >= stored.usedPercentage ? incoming : nil
+        }
+        // A later reset is a newer window; an earlier one is from a window that has already ended.
+        return incoming.resetsAt > storedReset ? incoming : nil
     }
 
     private func loadSnapshot() -> UsageSnapshot? {
@@ -37,13 +58,13 @@ struct SnapshotWriter {
         UsageWindow(usedPercentage: window.usedPercentage, resetsAt: Date(timeIntervalSince1970: window.resetsAt))
     }
 
-    private func appendHistoryIfNeeded(_ input: RateLimitInput) throws {
+    private func appendHistoryIfNeeded(fiveHour: RateLimitInput.Window?, sevenDay: RateLimitInput.Window?) throws {
         let entry = UsageHistoryEntry(
             t: now.timeIntervalSince1970.rounded(),
-            fh: input.fiveHour?.usedPercentage,
-            fhr: input.fiveHour?.resetsAt,
-            sd: input.sevenDay?.usedPercentage,
-            sdr: input.sevenDay?.resetsAt
+            fh: fiveHour?.usedPercentage,
+            fhr: fiveHour?.resetsAt,
+            sd: sevenDay?.usedPercentage,
+            sdr: sevenDay?.resetsAt
         )
         let url = paths.history(for: profileID)
         if let last = Self.lastEntry(in: url),

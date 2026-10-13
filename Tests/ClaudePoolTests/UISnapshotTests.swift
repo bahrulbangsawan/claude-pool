@@ -18,10 +18,17 @@ struct UISnapshotTests {
         let temp = try TempDirectory()
         let model = try SampleData.model(temp: temp)
         try await SampleData.addLiveSamples(model, temp: temp)
-        // Read-only: use the real claude binary (the temp home has none) and run the shell probes.
+        // Read-only: link the real claude binary into the temp home (so screens show ~/.local/bin/claude,
+        // not the real home folder) and run the shell probes.
         let realHome = FileManager.default.homeDirectoryForCurrentUser
-        model.settings.claudePathOverride = [".local/bin/claude", ".claude/local/claude"].map { realHome.appendingPathComponent($0).path }
-            .first { FileManager.default.isExecutableFile(atPath: $0) }
+        if let real = [".local/bin/claude", ".claude/local/claude"].map({ realHome.appendingPathComponent($0) })
+            .first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) {
+            let link = temp.paths.userHome.appendingPathComponent(".local/bin/claude")
+            try FileManager.default.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real.resolvingSymlinksInPath())
+            model.settings.claudePathOverride = link.path
+        }
+        try model.installer.installIfNeeded()
         await model.locateBinary()
         await model.runDiagnostics()
         app.activate(ignoringOtherApps: true)
@@ -60,9 +67,12 @@ struct UISnapshotTests {
         try await capture(chart, model: model, name: "chart-hover-light", size: NSSize(width: 860, height: 520), dark: false, panel: true)
         try await capture(chart, model: model, name: "chart-hover-dark", size: NSSize(width: 860, height: 520), dark: true, panel: true)
         let preview = try model.previewEnableTracking(model.profiles[0])
-        try await capture(TrackingConfirmSheet(request: TrackingRequest(profile: model.profiles[0], enable: true, preview: preview)),
-                          model: model, name: "sheet-tracking", size: NSSize(width: 600, height: 460), dark: false, panel: true)
-        try await capture(AddAccountSheet(), model: model, name: "sheet-add-account", size: NSSize(width: 520, height: 480), dark: false, panel: true)
+        for dark in [false, true] {
+            let suffix = dark ? "-dark" : ""
+            try await capture(TrackingConfirmSheet(request: TrackingRequest(profile: model.profiles[0], enable: true, preview: preview)),
+                              model: model, name: "sheet-tracking\(suffix)", size: NSSize(width: 600, height: 460), dark: dark, panel: true)
+            try await capture(AddAccountSheet(), model: model, name: "sheet-add-account\(suffix)", size: NSSize(width: 520, height: 480), dark: dark, panel: true)
+        }
         // In-app sign-in, waiting for authorization (driven by a stand-in claude; see LoginFlowTests).
         let fake = temp.file("fake-bin/claude")
         try FileManager.default.createDirectory(at: fake.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -78,8 +88,10 @@ struct UISnapshotTests {
         try await capture(SignInSheet(profile: personal), model: model, name: "sheet-signin-dark", size: NSSize(width: 600, height: 520), dark: true, panel: true)
         flow.cancel()
         if let session = model.sessionStore.sessions.first(where: { $0.profileID == model.profiles[0].id }) {
-            try await capture(HandoffSheet(request: HandoffRequest(session: session, target: model.profiles[1])), model: model,
-                              name: "sheet-handoff", size: NSSize(width: 540, height: 480), dark: false, panel: true)
+            for dark in [false, true] {
+                try await capture(HandoffSheet(request: HandoffRequest(session: session, target: model.profiles[1])), model: model,
+                                  name: "sheet-handoff\(dark ? "-dark" : "")", size: NSSize(width: 540, height: 480), dark: dark, panel: true)
+            }
         }
     }
 
