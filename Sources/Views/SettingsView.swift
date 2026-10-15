@@ -59,6 +59,8 @@ struct SettingsView: View {
                 }
             }
 
+            sharedExtensionsCard
+
             alertsCard
 
             Card(title: "Status Line") {
@@ -186,6 +188,42 @@ struct SettingsView: View {
                 showingInstall = false
             }
             .keyboardShortcut(.defaultAction)
+        }
+    }
+
+    // MARK: Shared extensions
+
+    private var sharedExtensionsCard: some View {
+        Card(title: "Shared Extensions", subtitle: "Every profile gets the same MCP servers, skills, plugins, hooks and permission rules, so switching accounts never loses them.") {
+            VStack(spacing: Space.xs) {
+                SettingRow(title: "Share across profiles",
+                           detail: "Install or remove an extension in any profile and every other profile follows, including profiles added later. Skills live in ~/.claude and are linked into the others. Sign-ins, the status line, theme and model stay per account. MCP servers that need a sign-in still ask once per account.") {
+                    Toggle("Share across profiles", isOn: Binding(
+                        get: { model.settings.shareExtensions },
+                        set: { model.setShareExtensions($0) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                if model.settings.shareExtensions {
+                    if let error = model.sharedSyncError {
+                        InlineMessage(kind: .warning, text: "Couldn't sync: \(error)")
+                    }
+                    Divider()
+                    FactRow(label: "Last sync") {
+                        Text(model.sharedSyncAt.map { $0.formatted(date: .omitted, time: .standard) } ?? "—")
+                    }
+                    if !model.sharedSyncChanges.isEmpty {
+                        DisclosureGroup("Last changes (\(model.sharedSyncChanges.count))") {
+                            Text(model.sharedSyncChanges.joined(separator: "\n").replacingOccurrences(of: model.paths.userHome.path, with: "~"))
+                                .font(.rowDetail.monospaced())
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .font(.rowDetail)
+                    }
+                }
+            }
         }
     }
 
@@ -334,7 +372,7 @@ struct SettingsView: View {
                     Text("Never done").font(.rowDetail.weight(.semibold)).padding(.top, Space.xxs)
                     Text("• Reading, copying, showing or logging credentials, tokens, sign-in files or Keychain items.")
                     Text("• Any network access, including usage or sign-in endpoints, scraping or proxying.")
-                    Text("• Reading session history, prompts or any file in a profile directory, except the statusLine key of settings.json after you opt in.")
+                    Text("• Reading session history, prompts or any file in a profile directory, except the statusLine key of settings.json after you opt in, and the extension entries Shared Extensions keeps in sync (MCP servers, skills, plugins, hooks, permission rules). Sign-in data is never touched.")
                     Text("• Switching automatically (by usage, limits, errors, timers or heuristics), rotating or load-balancing accounts, or forecasting usage. The opt-in limit alerts and suggestion only inform you; every switch is your click.")
                     Text("• Modifying the claude binary or signing in on your behalf.")
                 }

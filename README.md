@@ -35,6 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/bahrulbangsawan/claude-pool/main/in
   - [Status line manager](#status-line-manager)
   - [Usage tracking (opt-in)](#usage-tracking-opt-in)
   - [Limit alerts and suggestion (opt-in)](#limit-alerts-and-suggestion-opt-in)
+  - [Shared extensions](#shared-extensions)
   - [Diagnostics](#diagnostics)
   - [Settings](#settings)
 - [Install](#install)
@@ -125,6 +126,10 @@ Usage windows come from Claude Code's own status line data. Turning tracking on 
 
 Both are off by default (Settings › Limit Alerts). **Notify near and at a limit** sends one notification per window per reset period. **Suggest the account with the most room** shows, while the active account is close to a limit, the signed-in profile with the lowest reported usage, with a **Switch** button. Nothing ever switches on its own.
 
+### Shared extensions
+
+Each profile is a separate Claude Code config directory, so by default an MCP server, skill or plugin installed under one account doesn't exist in the others. **Settings › Shared Extensions** (on by default) keeps them the same everywhere: MCP servers (user scope), skills, agents, commands, output styles, `CLAUDE.md`, enabled plugins and marketplaces, hooks and permission rules. Install or remove one in any profile and every profile follows, including profiles you add later. Sign-ins, the status line, theme and model stay per account. Details: [Shared extensions](#shared-extensions-1).
+
 ### Diagnostics
 
 <p align="center"><img src="docs/screenshots/diagnostics.png" width="880" alt="Diagnostics page with passed, warning and failed checks"></p>
@@ -135,7 +140,7 @@ One page checks everything switching and tracking depend on: the Claude Code bin
 
 <p align="center"><img src="docs/screenshots/settings.png" width="880" alt="Settings page"></p>
 
-Install or remove the shell integration (or copy the snippet), point to a custom `claude` binary, set the working directory for new Terminal windows, choose what the menu bar shows, configure limit alerts, the collector's output, and launch at login.
+Install or remove the shell integration (or copy the snippet), point to a custom `claude` binary, set the working directory for new Terminal windows, choose what the menu bar shows, share extensions across profiles, configure limit alerts, the collector's output, and launch at login.
 
 ---
 
@@ -260,6 +265,15 @@ Settings › Limit Alerts. Both are off by default.
 
 Nothing switches on its own: no timer, alert or value ever changes the active profile.
 
+### Shared extensions
+
+Settings › Shared Extensions, on by default. The sync runs at launch, on every switch, when a profile is added or signed in, when the app becomes active, and once a minute (to catch `claude mcp add`, `/plugin install` and similar inside a session).
+
+- **Default is the primary copy.** Entries of `skills/`, `agents/`, `commands/` and `output-styles/` and the file `CLAUDE.md` live in `~/.claude`; every other profile gets a symlink per entry. A real entry created in another profile (for example a skill installed while that account was active) is moved into `~/.claude` and linked back. A local entry with the same name as a primary one is left alone. Broken links in `~/.claude` are not copied. `synced/` (skills and plugins claude.ai syncs for an organisation) stays per account.
+- **Keyed entries are merged three ways.** `mcpServers` in each profile's global config, and `enabledPlugins`, `extraKnownMarketplaces`, `hooks` and `permissions.allow/deny/ask` in `settings.json`. Plugins are shared as intent: Claude Code installs each enabled plugin into the profile's own `plugins/` folder, so install records and caches are not synced. An entry added in any profile is copied to all; on a name conflict the Default profile's value wins. Removing an entry from a profile that held it at the previous sync removes it everywhere. An entry the sync just wrote only counts as held once a later run sees it on disk, so a running session that writes an older copy can't be mistaken for a removal.
+- **Not shared.** Sign-in (Keychain), `oauthAccount`, `statusLine`, theme, model, `autoMode` and every other key. MCP servers that use OAuth keep their sign-in per account, so `/mcp` asks once in each profile.
+- Every changed file is backed up first to `~/.claude-pool/backups/shared-sync/<time>/`; the last 10 runs are kept. A file that isn't valid JSON is never rewritten.
+
 ### CPU and memory
 
 `ResourceStore` samples every 3 seconds with kernel counters only. It never signals or attaches to any process.
@@ -357,10 +371,11 @@ Values are whole percentages. The bar uses the accent colour below 70%, orange f
 
 1. The status line JSON that Claude Code pipes to the collector. Only `rate_limits.five_hour`, `rate_limits.seven_day` and `version` are **stored**. For a managed status line, display fields (model, folder, context, cost, …) are decoded in memory for that one run and printed back to Claude Code, never written.
 2. The output of the unmodified `claude auth status`, through the whitelist above (now including the non-secret `orgId`, for duplicate detection).
-3. `oauthAccount` plan fields of Claude Code's global config (see *Plans*). No other key of that file is declared.
+3. `oauthAccount` plan fields of Claude Code's global config (see *Plans*). No other key of that file is declared. (Shared extensions, below, merges `mcpServers` without decoding anything else.)
 4. Claude Code's session registry `<configDir>/sessions/<pid>.json`: pid, session id, folder, name, status, version, times.
 5. Per-response `usage` from conversation files (see *Usage analytics*). Content is never decoded or stored.
 6. The output of the unmodified `claude auth login` (the authorization URL and success/failure text), never stored or logged.
+7. With Shared extensions on: the extension entries listed under *Shared extensions*, read and written as opaque JSON values. Other keys are carried over unchanged and never inspected.
 
 **Never:**
 
@@ -385,7 +400,7 @@ Switching and tracking only work if the app can write outside its own container:
 
 - `~/.zshrc` / `~/.bash_profile`, for the marker-delimited shell function (only after you confirm, with a backup);
 - `~/.claude-pool/`: the pointer file, the installed collector, usage snapshots, chain files and backups. This location must be stable and readable by `claude` and by the collector, which Claude Code runs outside any sandbox;
-- each profile's `settings.json` (only the `statusLine` key, after opt-in, with a backup);
+- each profile's `settings.json` (the `statusLine` key after opt-in, and the shared-extension keys while Shared extensions is on, with a backup);
 - arbitrary user-chosen profile directories, and launching `claude` from an arbitrary path.
 
 Sandbox entitlements cannot express "a user-chosen dotfile in `$HOME`, persistently, and also an executable that Claude Code will run". Hardened Runtime stays **on**.
@@ -404,6 +419,8 @@ Sandbox entitlements cannot express "a user-chosen dotfile in `$HOME`, persisten
 | `~/.claude-pool/usage/<UUID>.history.jsonl` | History, pruned to 8 days / 5,000 lines | 0600 |
 | `~/.claude-pool/chain/<UUID>.cmd` | Your original status line command | 0600 |
 | `~/.claude-pool/backups/<UUID>/settings-*.json` | `settings.json` backups, last 10 kept | 0600 |
+| `~/.claude-pool/shared-sync-state.json` | Shared extensions: which entries each profile held at the last sync | 0600 |
+| `~/.claude-pool/backups/shared-sync/<time>/` | Shared extensions: copies of each file before it changed, last 10 runs | 0700 |
 | `~/Library/Caches/ClaudePool/launch-*.command` | Terminal launcher scripts, deleted after 24h | 0700 |
 | `~/Library/Caches/ClaudePool/login-<id>/` | URL-recording `BROWSER` script during an in-app sign-in; removed when it ends | 0700 |
 | `~/Library/Application Support/ClaudePool/usage-index.sqlite` | Token usage index (numbers, model, time, profile); 62 days | 0600 |

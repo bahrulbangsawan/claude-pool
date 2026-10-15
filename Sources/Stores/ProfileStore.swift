@@ -36,6 +36,8 @@ final class ProfileStore {
     private(set) var activeProfileID: UUID?
     private(set) var unknownActiveDirectory: String?
     var lastError: String?
+    /// Called after profiles.json is written (a profile was added, edited, removed or reordered).
+    @ObservationIgnored var onSave: (() -> Void)?
 
     let paths: Paths
     let pointer: PointerFileService
@@ -219,6 +221,7 @@ final class ProfileStore {
             try AtomicFile.ensureDirectory(paths.appSupport, permissions: 0o700)
             let data = try Self.encoder.encode(profiles)
             try AtomicFile.write(data, to: paths.profilesFile, permissions: 0o600)
+            onSave?()
         } catch {
             lastError = "Couldn't save profiles: \(error.localizedDescription). Check that ~/Library/Application Support/ClaudePool is writable, then try again."
         }

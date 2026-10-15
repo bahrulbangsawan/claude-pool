@@ -27,6 +27,10 @@ final class AppModel {
     private(set) var isRunningDiagnostics = false
     private(set) var diagnosticsRunAt: Date?
     var startupError: String?
+    /// Last shared-extensions sync: when it ran, what it changed, or why it failed.
+    private(set) var sharedSyncAt: Date?
+    private(set) var sharedSyncChanges: [String] = []
+    private(set) var sharedSyncError: String?
 
     /// What the manager window shows; the menu's warning row jumps to Diagnostics.
     var route: ManagerRoute = .overview
@@ -55,6 +59,9 @@ final class AppModel {
     @ObservationIgnored let notifier = LimitNotifier()
     @ObservationIgnored private var alertTracker = LimitAlertTracker()
     @ObservationIgnored private var maintenanceTimer: Timer?
+    @ObservationIgnored private var sharedSyncTimer: Timer?
+    @ObservationIgnored private var sharedSyncTask: Task<Void, Never>?
+    @ObservationIgnored private var sharedSyncPending = false
     @ObservationIgnored private var activationObserver: NSObjectProtocol?
     @ObservationIgnored private var started = false
     /// Off only in UI snapshots, so sample sign-in states are not replaced by live checks.
@@ -92,6 +99,8 @@ final class AppModel {
         started = true
         settingsStore.load()
         profileStore.load()
+        profileStore.onSave = { [weak self] in self?.syncSharedExtensions() }
+        syncSharedExtensions()
         do {
             try AtomicFile.ensureDirectory(paths.pool.home, permissions: 0o700)
             try installer.installIfNeeded()
@@ -134,6 +143,13 @@ final class AppModel {
         RunLoop.main.add(timer, forMode: .common)
         maintenanceTimer = timer
 
+        // Picks up extensions installed or removed from inside a session.
+        let syncTimer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.syncSharedExtensions() }
+        }
+        RunLoop.main.add(syncTimer, forMode: .common)
+        sharedSyncTimer = syncTimer
+
         activationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -149,6 +165,7 @@ final class AppModel {
     }
 
     func appDidBecomeActive() async {
+        syncSharedExtensions()
         usageStore.reload()
         refreshLocalState()
         await authStore.refreshIfStale(profiles, binary: await resolvedBinary())
@@ -223,6 +240,7 @@ final class AppModel {
     // MARK: Switching (manual only)
 
     func setActive(_ profile: Profile) {
+        syncSharedExtensions()
         profileStore.setActive(profile.id)
         // Read back what new launches will actually read; the UI reports the file, not intent.
         reloadPointer()
@@ -322,6 +340,7 @@ final class AppModel {
             guard let self else { return nil }
             await self.authStore.refresh(profile, binary: binary)
             self.syncStatuslineContext()
+            self.syncSharedExtensions()
             return self.authStore.status(for: profile.id)
         }
         loginFlow = flow
@@ -569,6 +588,39 @@ final class AppModel {
     func uninstallShellIntegration() throws -> URL? {
         defer { shellStatus = shell.status() }
         return try shell.uninstall()
+    }
+
+    // MARK: Shared extensions
+
+    /// Runs the shared-extensions sync off the main thread when the setting is on. A request while one
+    /// is running queues exactly one more run.
+    func syncSharedExtensions() {
+        guard settings.shareExtensions, liveChecksEnabled else { return }
+        guard sharedSyncTask == nil else { sharedSyncPending = true; return }
+        let sync = SharedConfigSync(pool: paths.pool, home: paths.userHome)
+        let profiles = profiles
+        sharedSyncTask = Task { @MainActor [weak self] in
+            let result = await Task.detached { Result { try sync.run(profiles: profiles) } }.value
+            guard let self else { return }
+            self.sharedSyncAt = Date()
+            switch result {
+            case let .success(report):
+                if !report.changes.isEmpty { self.sharedSyncChanges = report.changes }
+                self.sharedSyncError = nil
+            case let .failure(error):
+                self.sharedSyncError = error.localizedDescription
+            }
+            self.sharedSyncTask = nil
+            if self.sharedSyncPending {
+                self.sharedSyncPending = false
+                self.syncSharedExtensions()
+            }
+        }
+    }
+
+    func setShareExtensions(_ enabled: Bool) {
+        settings.shareExtensions = enabled
+        if enabled { syncSharedExtensions() }
     }
 
     // MARK: Settings side effects

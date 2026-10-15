@@ -15,6 +15,8 @@ struct AppSettings: Codable, Hashable, Sendable {
     /// Opt-in: name the account with the most room left when the active one is near or at a limit.
     var suggestAccountEnabled: Bool = false
     var collectorOutput: CollectorOutputMode = .summary
+    /// Keeps MCP servers, skills, plugins, hooks and permission rules the same in every profile.
+    var shareExtensions: Bool = true
     var lastHistoryPrune: Date?
 
     init() {}
@@ -32,6 +34,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         limitAlertThreshold = try c.decodeIfPresent(Int.self, forKey: .limitAlertThreshold) ?? defaults.limitAlertThreshold
         suggestAccountEnabled = try c.decodeIfPresent(Bool.self, forKey: .suggestAccountEnabled) ?? defaults.suggestAccountEnabled
         collectorOutput = try c.decodeIfPresent(CollectorOutputMode.self, forKey: .collectorOutput) ?? defaults.collectorOutput
+        shareExtensions = try c.decodeIfPresent(Bool.self, forKey: .shareExtensions) ?? defaults.shareExtensions
         lastHistoryPrune = try c.decodeIfPresent(Date.self, forKey: .lastHistoryPrune)
     }
 }

@@ -32,6 +32,9 @@ public struct PoolPaths: Sendable, Hashable {
     public var usageDirectory: URL { home.appendingPathComponent("usage", isDirectory: true) }
     public var chainDirectory: URL { home.appendingPathComponent("chain", isDirectory: true) }
     public var backupsDirectory: URL { home.appendingPathComponent("backups", isDirectory: true) }
+    /// Which shared extensions each profile held at the last sync (for spreading deletions).
+    public var sharedSyncState: URL { home.appendingPathComponent("shared-sync-state.json") }
+    public var sharedSyncBackups: URL { backupsDirectory.appendingPathComponent("shared-sync", isDirectory: true) }
     /// One word, `summary` or `none`: what the collector prints when no original status line exists.
     public var collectorOutputSetting: URL { home.appendingPathComponent("collector-output") }
 
