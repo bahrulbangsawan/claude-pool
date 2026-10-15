@@ -32,7 +32,7 @@ if pgrep -xq ClaudePool; then
 	sleep 1
 fi
 
-echo "Installing to $DEST/$APP…"
+echo "Installing to ${DEST}/${APP}…"
 if [ -w "$DEST" ]; then
 	rm -rf "$DEST/$APP"
 	ditto "$MNT/$APP" "$DEST/$APP"
