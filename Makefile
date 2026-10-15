@@ -24,6 +24,17 @@ TEST_FLAGS   := -Xswiftc -F -Xswiftc $(CLT_DEV)/Frameworks \
                 -Xlinker -rpath -Xlinker $(CLT_DEV)/usr/lib
 endif
 
+# Signing. The default "-" is ad-hoc: fine locally, but Gatekeeper blocks the app on other Macs.
+# For a release, pass a Developer ID identity and a notarytool keychain profile, e.g.
+#   make notarize SIGN_IDENTITY="Developer ID Application: Name (TEAMID)" NOTARY_PROFILE=claude-pool
+SIGN_IDENTITY  ?= -
+NOTARY_PROFILE ?=
+ifeq ($(SIGN_IDENTITY),-)
+TIMESTAMP    := --timestamp=none
+else
+TIMESTAMP    := --timestamp
+endif
+
 HAVE_XCODE   := $(shell xcodebuild -version >/dev/null 2>&1 && echo yes)
 ifeq ($(HAVE_XCODE),yes)
 BUILD_SYSTEM ?= xcode
@@ -31,7 +42,7 @@ else
 BUILD_SYSTEM ?= swiftpm
 endif
 
-.PHONY: generate build test run dmg icon version set-version clean live-check snapshots static-check symbol-check build-xcode build-swiftpm check-plist
+.PHONY: generate build test run dmg notarize icon version set-version clean live-check snapshots static-check symbol-check build-xcode build-swiftpm check-plist
 
 generate:
 	@command -v xcodegen >/dev/null || { echo "xcodegen not found: brew install xcodegen"; exit 1; }
@@ -41,7 +52,7 @@ build: build-$(BUILD_SYSTEM)
 
 build-xcode: check-plist generate
 	xcodebuild -project $(APP_NAME).xcodeproj -scheme $(APP_NAME) -configuration Release \
-		-derivedDataPath $(BUILD_DIR)/DerivedData ARCHS=$(ARCH) CODE_SIGN_IDENTITY=- build
+		-derivedDataPath $(BUILD_DIR)/DerivedData ARCHS=$(ARCH) CODE_SIGN_IDENTITY="$(SIGN_IDENTITY)" OTHER_CODE_SIGN_FLAGS="$(TIMESTAMP)" build
 	rm -rf "$(APP)"
 	cp -R "$(BUILD_DIR)/DerivedData/Build/Products/Release/$(APP_NAME).app" "$(APP)"
 	@echo "Built $(APP)"
@@ -61,9 +72,9 @@ build-swiftpm: check-plist
 	printf 'APPL????' > "$(APP)/Contents/PkgInfo" && \
 	cp "$$BIN/$(APP_NAME)" "$(APP)/Contents/MacOS/$(APP_NAME)" && \
 	cp "$$BIN/$(HELPER_NAME)" "$(APP)/Contents/Helpers/$(HELPER_NAME)" && \
-	codesign --force --options runtime --timestamp=none --identifier com.example.claudepool.collector \
-		--sign - "$(APP)/Contents/Helpers/$(HELPER_NAME)" && \
-	codesign --force --options runtime --timestamp=none --sign - "$(APP)" && \
+	codesign --force --options runtime $(TIMESTAMP) --identifier com.example.claudepool.collector \
+		--sign "$(SIGN_IDENTITY)" "$(APP)/Contents/Helpers/$(HELPER_NAME)" && \
+	codesign --force --options runtime $(TIMESTAMP) --sign "$(SIGN_IDENTITY)" "$(APP)" && \
 	codesign --verify --strict --verbose=1 "$(APP)" && \
 	echo "Built $(APP)"
 
@@ -74,7 +85,7 @@ run: build
 	open "$(APP)"
 
 # Drag-to-install disk image: build/ClaudePool-<version>.dmg with the app and an Applications link.
-# Ad-hoc signed, not notarized: other Macs need right-click › Open the first time.
+# Ad-hoc signed by default; use `make notarize` for a DMG that opens on other Macs without a warning.
 dmg: build
 	@rm -rf "$(BUILD_DIR)/dmg-root" "$(DMG)"
 	@mkdir -p "$(BUILD_DIR)/dmg-root"
@@ -86,6 +97,18 @@ dmg: build
 	hdiutil create -volname "Claude Pool $(VERSION)" -srcfolder "$(BUILD_DIR)/dmg-root" -fs HFS+ -format UDZO -ov "$(DMG)"
 	@rm -rf "$(BUILD_DIR)/dmg-root"
 	@echo "Built $(DMG)"
+
+# Developer ID-signed, notarized and stapled DMG. One-time setup:
+#   xcrun notarytool store-credentials claude-pool --apple-id <id> --team-id <TEAMID>
+notarize:
+	@test "$(SIGN_IDENTITY)" != "-" || { echo "notarize needs SIGN_IDENTITY=\"Developer ID Application: …\""; exit 1; }
+	@test -n "$(NOTARY_PROFILE)" || { echo "notarize needs NOTARY_PROFILE=<notarytool keychain profile>"; exit 1; }
+	$(MAKE) dmg SIGN_IDENTITY="$(SIGN_IDENTITY)"
+	codesign --force $(TIMESTAMP) --sign "$(SIGN_IDENTITY)" "$(DMG)"
+	xcrun notarytool submit "$(DMG)" --keychain-profile "$(NOTARY_PROFILE)" --wait
+	xcrun stapler staple "$(DMG)"
+	spctl --assess --type open --context context:primary-signature --verbose "$(DMG)"
+	@echo "Notarized $(DMG)"
 
 # Redraws Resources/AppIcon.icns and AppIcon-1024.png from scripts/make-icon.swift.
 icon:

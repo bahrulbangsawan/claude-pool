@@ -11,6 +11,12 @@ Switch accounts without <code>/logout</code>, see every account's limits at a gl
 <a href="https://github.com/bahrulbangsawan/claude-pool/releases/latest"><b>Download the latest release</b></a> · macOS 14+ · Apple silicon
 </p>
 
+**Install in one line** (downloads the latest release into `/Applications` and opens it, with no Gatekeeper prompt):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bahrulbangsawan/claude-pool/main/install.sh | sh
+```
+
 <p align="center"><img src="docs/screenshots/overview.png" width="880" alt="Claude Pool overview window in dark mode"></p>
 
 > Unofficial utility. Not affiliated with or endorsed by Anthropic. The app icon and avatars are original pixel art of a crab, inspired by the Claude Code mascot; all other icons are SF Symbols.
@@ -135,12 +141,23 @@ Install or remove the shell integration (or copy the snippet), point to a custom
 
 ## Install
 
+**Quickest:** run this in Terminal. It installs the latest release into `/Applications` and opens it ([install.sh](install.sh)). Files downloaded with `curl` aren't quarantined, so macOS doesn't show the "Not Opened" warning.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bahrulbangsawan/claude-pool/main/install.sh | sh
+```
+
+**Or install by hand:**
+
 1. Download `ClaudePool-<version>.dmg` from the [latest release](https://github.com/bahrulbangsawan/claude-pool/releases/latest).
 2. Open it and drag **Claude Pool** to **Applications**.
-3. The app is ad-hoc signed and not notarized, so the first launch is blocked by Gatekeeper. Right-click the app › **Open**, or run:
-   ```sh
-   xattr -dr com.apple.quarantine /Applications/ClaudePool.app
-   ```
+3. The app is not yet notarized by Apple, so the first launch shows **"ClaudePool" Not Opened**. Click **Done** (not Move to Trash), then either:
+   - open **System Settings › Privacy & Security**, scroll to *"ClaudePool" was blocked*, click **Open Anyway** and confirm, or
+   - run once in Terminal:
+     ```sh
+     xattr -dr com.apple.quarantine /Applications/ClaudePool.app
+     ```
+   On macOS 15 and later, right-click › Open no longer skips this check.
 
 Or build it yourself: see [Build, test, run](#build-test-run).
 
@@ -302,7 +319,7 @@ Copy `build/ClaudePool.app` to `/Applications` if you want it to launch at login
 
 **Versions.** The version lives in `Resources/Info.plist` (`CFBundleShortVersionString`, plus the build number `CFBundleVersion`), and every build reads it from there. The installed app shows it in Settings › About ("Version 1.1.0 (2)"), and Finder shows it in Get Info.
 
-**DMG on other Macs.** The app is ad-hoc signed and not notarized, so Gatekeeper blocks the first launch on another Mac: right-click the app › Open, or run `xattr -dr com.apple.quarantine /Applications/ClaudePool.app`. Opening it without warnings on other Macs needs an Apple Developer ID certificate and notarization.
+**DMG on other Macs.** The app is ad-hoc signed and not notarized, so Gatekeeper blocks the first launch on another Mac: use System Settings › Privacy & Security › **Open Anyway**, or run `xattr -dr com.apple.quarantine /Applications/ClaudePool.app`. To ship a DMG that opens without a warning, build it with `make notarize SIGN_IDENTITY="Developer ID Application: Name (TEAMID)" NOTARY_PROFILE=<profile>` (needs an Apple Developer Program membership; see the Makefile for the one-time `notarytool store-credentials` setup).
 
 ## The tracking opt-in
 
