@@ -54,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/bahrulbangsawan/claude-pool/main/in
 
 <p align="center"><img src="docs/screenshots/menubar-label.png" width="420" alt="Menu bar label with the crab mark, active profile and usage"></p>
 
-The menu bar shows the pixel-crab mark, the active profile and its limits (`Work · 5h:23% · 7d:41%`), and optionally this Mac's CPU and memory. Each part can be turned off in Settings.
+The menu bar shows the pixel-crab mark, the active profile and its limits (`work · 5h:23% · 7d:41%`), and optionally this Mac's CPU and memory. Each part can be turned off in Settings.
 
 <p align="center"><img src="docs/screenshots/menu.png" width="340" alt="Menu bar panel listing every profile with its 5-hour and 7-day usage"></p>
 
@@ -64,7 +64,7 @@ Click it for the panel:
 - **Every profile** with its 5-hour and 7-day bars, how fresh the values are, a ↻ **Check Usage Now** button and a Terminal button. Click a row (or press ⌘1–⌘9) to make it active.
 - A warning when a **running session uses another account**, and when **Diagnostics** need attention.
 - **CPU and memory** of this Mac and of all running `claude` sessions.
-- **Check for Updates…**, and a line with **Install** when a new version is out.
+- **Check for Updates…**, and a line with **Install** when a new version is out (see [Updates](#updates)).
 
 ### Overview
 
@@ -86,6 +86,10 @@ Each profile is one Claude Code config directory with its own sign-in. Its page 
 
 <p align="center"><img src="docs/screenshots/chart-hover.png" width="720" alt="Usage history chart with a hover tooltip"></p>
 
+A profile that is signed out shows **Sign In…** in place of its usage, and its history stays empty until a session reports again. The other states (tracking off, not reported for this plan, no data yet, stale, reset) are listed under [Display rules](#display-rules).
+
+<p align="center"><img src="docs/screenshots/profile-client.png" width="880" alt="Profile page of a signed-out account with a Sign In button"></p>
+
 ### Sign in without Terminal
 
 <p align="center">
@@ -95,6 +99,8 @@ Each profile is one Claude Code config directory with its own sign-in. Its page 
 </p>
 
 **Add Account** creates a profile directory and signs it in by driving Claude Code's own `claude auth login`. Open the link in your browser (it completes on its own), or copy it and paste the code back. A 10-minute countdown, Cancel and **Start Again** are built in, and a duplicate account is flagged. **Sign In with Terminal** is still available, and **Adopt Existing…** picks up directories such as `~/.claude-work` you already have.
+
+<p align="center"><img src="docs/screenshots/sheet-adopt.png" width="520" alt="Adopt Existing Directories sheet listing ~/.claude-* folders, with registered ones greyed out"></p>
 
 ### Sessions and handoff
 
@@ -132,7 +138,9 @@ Both are off by default (Settings › Limit Alerts). **Notify near and at a limi
 
 ### Shared extensions
 
-Each profile is a separate Claude Code config directory, so by default an MCP server, skill or plugin installed under one account doesn't exist in the others. **Settings › Shared Extensions** (on by default) keeps them the same everywhere: MCP servers (user scope), skills, agents, commands, output styles, `CLAUDE.md`, enabled plugins and marketplaces, hooks and permission rules. Install or remove one in any profile and every profile follows, including profiles you add later. Sign-ins, the status line, theme and model stay per account. Details: [Shared extensions](#shared-extensions-1).
+Each profile is a separate Claude Code config directory, so by default an MCP server, skill or plugin installed under one account doesn't exist in the others. **Settings › Shared Extensions** (on by default) keeps them the same everywhere: MCP servers (user scope), skills, agents, commands, output styles, `CLAUDE.md`, enabled plugins and marketplaces, hooks and permission rules. Install or remove one in any profile and every profile follows, including profiles you add later. Sign-ins, the status line, theme and model stay per account. The card shows when the last sync ran and what it changed. Details: [Shared extensions](#shared-extensions-1).
+
+<p align="center"><img src="docs/screenshots/card-shared-extensions.png" width="880" alt="Settings card: Shared Extensions switched on, with the last sync time and its changes"></p>
 
 ### MCP servers and sign-ins
 
@@ -144,7 +152,11 @@ Each profile keeps its own MCP sign-ins, so a server such as Cloudflare or Neon 
 - **Add Server…** offers Cloudflare, AWS (with its region), Neon, Polar and Polar Sandbox, Mobbin, Meta Developer Tools, WhatsApp Business, Linear, Notion and Sentry, or any remote address. It runs `claude mcp add --scope user` in every profile (or the ones you pick while Shared Extensions is off) and can go straight on to the sign-ins.
 - **Sign Out** and **Remove**, with a confirmation, and **Check Again**. Each profile's page shows how many of its servers are connected or waiting for a sign-in.
 
-<p align="center"><img src="docs/screenshots/sheet-mcp-signin.png" width="560" alt="MCP sign-in sheet going through three profiles, waiting for the first approval"></p>
+<p align="center">
+<img src="docs/screenshots/sheet-mcp-add.png" width="440" alt="Add Server sheet with the list of known MCP servers">
+&nbsp;
+<img src="docs/screenshots/sheet-mcp-signin.png" width="440" alt="MCP sign-in sheet going through three profiles, waiting for the first approval">
+</p>
 
 Details: [MCP sign-in](#mcp-sign-in).
 
@@ -162,11 +174,17 @@ Install or remove the shell integration (or copy the snippet), point to a custom
 
 ### Updates
 
+<p align="center"><img src="docs/screenshots/menu-update.png" width="340" alt="Menu panel with a line saying a new Claude Pool version is available, and an Install button"></p>
+
 **Settings › Updates › Update automatically** (on by default) checks GitHub for a new release at launch and every 6 hours. When there is one, Claude Pool downloads its disk image, checks it, installs it over itself and reopens. Running `claude` sessions are separate processes and keep running. **Check for Updates…** (in Settings and at the bottom of the menu panel) checks right away and offers **Install and Relaunch**. Turn automatic updates off and nothing is checked unless you click it. Details: [Updates](#updates-1).
 
 ### Command line
 
 Everything you'd click through, from any terminal or herdr pane. Install it in **Settings › Command Line Tool**; the [one-line installer](#install) adds it too when it can.
+
+<p align="center"><img src="docs/screenshots/cli.png" width="880" alt="Terminal running claude-pool list, claude-pool usage work and claude-pool sessions"></p>
+
+<p align="center"><img src="docs/screenshots/card-command-line.png" width="880" alt="Settings card: Command Line Tool installed at ~/.local/bin/claude-pool"></p>
 
 ```sh
 claude-pool work                     # start claude as Work, right here in this terminal or herdr pane
@@ -399,7 +417,7 @@ make build         # → build/ClaudePool.app (ad-hoc signed, Hardened Runtime)
 make test          # unit + subprocess tests (Swift Testing)
 make static-check  # forbidden-API grep + binary symbol check
 make live-check    # read-only audit against your real claude, Keychain sign-ins and login shell
-make snapshots     # renders every screen (light, dark, narrowest width) to build/snapshots; the README images are the dark set
+make snapshots     # renders every screen (light, dark, narrowest width) to build/snapshots; the README images in docs/screenshots are the dark set
 make run           # build and open the app
 make dmg           # → build/ClaudePool-<version>.dmg (app + Applications link)
 make version       # prints the version and build number, e.g. 1.1.0 (build 2)

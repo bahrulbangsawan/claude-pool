@@ -61,7 +61,7 @@ struct SettingsView: View {
                 }
             }
 
-            commandLineCard
+            CommandLineToolCard()
 
             Card(title: "Menu Bar") {
                 VStack(spacing: Space.xs) {
@@ -79,7 +79,7 @@ struct SettingsView: View {
                 }
             }
 
-            sharedExtensionsCard
+            SharedExtensionsCard()
 
             alertsCard
 
@@ -210,83 +210,6 @@ struct SettingsView: View {
                 showingInstall = false
             }
             .keyboardShortcut(.defaultAction)
-        }
-    }
-
-    // MARK: Command line tool
-
-    private var commandLineCard: some View {
-        let state = model.commandLineState
-        return Card(title: "Command Line Tool", subtitle: "Use your accounts from any terminal or herdr pane: claude-pool work starts claude as work right there.") {
-            switch state {
-            case .installed: StatusBadge(text: "Installed", systemImage: "checkmark.circle.fill", tint: .statusOK)
-            case .otherCopy: StatusBadge(text: "Other Copy", systemImage: "arrow.triangle.2.circlepath", tint: .statusWarn)
-            case .notInstalled: StatusBadge(text: "Not Installed", systemImage: "minus.circle", tint: .secondary)
-            }
-        } content: {
-            switch state {
-            case let .installed(link):
-                FactRow(label: "Command") { Text(model.paths.abbreviate(link)).font(.rowDetail.monospaced()) }
-            case let .otherCopy(link):
-                InlineMessage(kind: .info, text: "\(model.paths.abbreviate(link)) starts another copy of Claude Pool. Install to point it at this one.")
-            case .notInstalled:
-                Text("Adds claude-pool to a folder on your PATH, as a link to this app. If none of your own folders is on the PATH, macOS asks for an administrator password to use /usr/local/bin.")
-                    .font(.meta)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            HStack(spacing: Space.xs) {
-                Button(state == .notInstalled ? "Install" : "Reinstall") { Task { await model.installCommandLineTool() } }
-                Button("Remove") { Task { await model.uninstallCommandLineTool() } }
-                    .disabled(state == .notInstalled)
-                if model.isChangingCommandLine { ProgressView().controlSize(.small) }
-                Spacer()
-            }
-            .disabled(model.isChangingCommandLine)
-            Text("claude-pool list · claude-pool open work ~/projects/api · claude-pool use work · claude-pool help")
-                .font(.rowDetail.monospaced())
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-            if let error = model.commandLineError {
-                InlineMessage(kind: .error, text: error) { model.commandLineError = nil }
-            }
-        }
-    }
-
-    // MARK: Shared extensions
-
-    private var sharedExtensionsCard: some View {
-        Card(title: "Shared Extensions", subtitle: "Every profile gets the same MCP servers, skills, plugins, hooks and permission rules, so switching accounts never loses them.") {
-            VStack(spacing: Space.xs) {
-                SettingRow(title: "Share across profiles",
-                           detail: "Install or remove an extension in any profile and every other profile follows, including profiles added later. Skills live in ~/.claude and are linked into the others. Sign-ins, the status line, theme and model stay per account. MCP servers that need a sign-in still sign in once per account, from the MCP Servers page.") {
-                    Toggle("Share across profiles", isOn: Binding(
-                        get: { model.settings.shareExtensions },
-                        set: { model.setShareExtensions($0) }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                }
-                if model.settings.shareExtensions {
-                    if let error = model.sharedSyncError {
-                        InlineMessage(kind: .warning, text: "Couldn't sync: \(error)")
-                    }
-                    Divider()
-                    FactRow(label: "Last sync") {
-                        Text(model.sharedSyncAt.map { $0.formatted(date: .omitted, time: .standard) } ?? "—")
-                    }
-                    if !model.sharedSyncChanges.isEmpty {
-                        DisclosureGroup("Last changes (\(model.sharedSyncChanges.count))") {
-                            Text(model.sharedSyncChanges.joined(separator: "\n").replacingOccurrences(of: model.paths.userHome.path, with: "~"))
-                                .font(.rowDetail.monospaced())
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .font(.rowDetail)
-                    }
-                }
-            }
         }
     }
 
@@ -495,6 +418,89 @@ struct SettingsView: View {
                 .font(.rowDetail)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Space.xs)
+            }
+        }
+    }
+}
+
+/// Settings › Command Line Tool: the claude-pool link on the PATH.
+struct CommandLineToolCard: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let state = model.commandLineState
+        return Card(title: "Command Line Tool", subtitle: "Use your accounts from any terminal or herdr pane: claude-pool work starts claude as work right there.") {
+            switch state {
+            case .installed: StatusBadge(text: "Installed", systemImage: "checkmark.circle.fill", tint: .statusOK)
+            case .otherCopy: StatusBadge(text: "Other Copy", systemImage: "arrow.triangle.2.circlepath", tint: .statusWarn)
+            case .notInstalled: StatusBadge(text: "Not Installed", systemImage: "minus.circle", tint: .secondary)
+            }
+        } content: {
+            switch state {
+            case let .installed(link):
+                FactRow(label: "Command") { Text(model.paths.abbreviate(link)).font(.rowDetail.monospaced()) }
+            case let .otherCopy(link):
+                InlineMessage(kind: .info, text: "\(model.paths.abbreviate(link)) starts another copy of Claude Pool. Install to point it at this one.")
+            case .notInstalled:
+                Text("Adds claude-pool to a folder on your PATH, as a link to this app. If none of your own folders is on the PATH, macOS asks for an administrator password to use /usr/local/bin.")
+                    .font(.meta)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: Space.xs) {
+                Button(state == .notInstalled ? "Install" : "Reinstall") { Task { await model.installCommandLineTool() } }
+                Button("Remove") { Task { await model.uninstallCommandLineTool() } }
+                    .disabled(state == .notInstalled)
+                if model.isChangingCommandLine { ProgressView().controlSize(.small) }
+                Spacer()
+            }
+            .disabled(model.isChangingCommandLine)
+            Text("claude-pool list · claude-pool open work ~/projects/api · claude-pool use work · claude-pool help")
+                .font(.rowDetail.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            if let error = model.commandLineError {
+                InlineMessage(kind: .error, text: error) { model.commandLineError = nil }
+            }
+        }
+    }
+}
+
+/// Settings › Shared Extensions: the switch, and what the last sync did.
+struct SharedExtensionsCard: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Card(title: "Shared Extensions", subtitle: "Every profile gets the same MCP servers, skills, plugins, hooks and permission rules, so switching accounts never loses them.") {
+            VStack(spacing: Space.xs) {
+                SettingRow(title: "Share across profiles",
+                           detail: "Install or remove an extension in any profile and every other profile follows, including profiles added later. Skills live in ~/.claude and are linked into the others. Sign-ins, the status line, theme and model stay per account. MCP servers that need a sign-in still sign in once per account, from the MCP Servers page.") {
+                    Toggle("Share across profiles", isOn: Binding(
+                        get: { model.settings.shareExtensions },
+                        set: { model.setShareExtensions($0) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                if model.settings.shareExtensions {
+                    if let error = model.sharedSyncError {
+                        InlineMessage(kind: .warning, text: "Couldn't sync: \(error)")
+                    }
+                    Divider()
+                    FactRow(label: "Last sync") {
+                        Text(model.sharedSyncAt.map { $0.formatted(date: .omitted, time: .standard) } ?? "—")
+                    }
+                    if !model.sharedSyncChanges.isEmpty {
+                        DisclosureGroup("Last changes (\(model.sharedSyncChanges.count))") {
+                            Text(model.sharedSyncChanges.joined(separator: "\n").replacingOccurrences(of: model.paths.userHome.path, with: "~"))
+                                .font(.rowDetail.monospaced())
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .font(.rowDetail)
+                    }
+                }
             }
         }
     }

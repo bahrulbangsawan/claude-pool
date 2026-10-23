@@ -19,6 +19,7 @@ struct UISnapshotTests {
         let model = try SampleData.model(temp: temp)
         try await SampleData.addLiveSamples(model, temp: temp)
         SampleData.addMcpSamples(model)
+        try await SampleData.addSettingsSamples(model)
         // Read-only: link the real claude binary into the temp home (so screens show ~/.local/bin/claude,
         // not the real home folder) and run the shell probes.
         let realHome = FileManager.default.homeDirectoryForCurrentUser
@@ -27,7 +28,7 @@ struct UISnapshotTests {
             let link = temp.paths.userHome.appendingPathComponent(".local/bin/claude")
             try FileManager.default.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
             try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real.resolvingSymlinksInPath())
-            model.settings.claudePathOverride = link.path
+            model.settings.claudePathOverride = "~/.local/bin/claude"
         }
         try model.installer.installIfNeeded()
         await model.locateBinary()
@@ -47,6 +48,14 @@ struct UISnapshotTests {
                 try await capture(ManagerWindow(), model: model, name: "\(name)-\(suffix)", size: NSSize(width: 1100, height: 760), dark: dark)
             }
         }
+        // A new release: the menu's Install line.
+        model.updateState = .available(AppRelease(version: AppVersion("1.8.0")!,
+                                                  pageURL: URL(string: "https://github.com/bahrulbangsawan/claude-pool/releases/tag/v1.8.0")!,
+                                                  diskImageURL: nil, sha256: nil))
+        for dark in [false, true] {
+            try await capture(MenuBarView(), model: model, name: "menu-update-\(dark ? "dark" : "light")", size: NSSize(width: 340, height: 680), dark: dark, panel: true)
+        }
+        model.updateState = .idle
         // Menu bar label: brand mark, name, 5h/7d usage, CPU/MEM.
         for dark in [false, true] {
             try await capture(MenuBarLabel(model: model).padding(.horizontal, 10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading),
@@ -114,6 +123,22 @@ struct UISnapshotTests {
                                   name: "sheet-handoff\(dark ? "-dark" : "")", size: NSSize(width: 540, height: 480), dark: dark, panel: true)
             }
         }
+        // Settings cards on their own, for the feature sections.
+        for dark in [false, true] {
+            let suffix = dark ? "-dark" : ""
+            try await capture(SharedExtensionsCard().padding(Space.lg).frame(width: 880, height: 240, alignment: .top), model: model, name: "card-shared-extensions\(suffix)",
+                              size: NSSize(width: 880, height: 240), dark: dark, panel: true)
+            try await capture(CommandLineToolCard().padding(Space.lg).frame(width: 880, height: 200, alignment: .top), model: model, name: "card-command-line\(suffix)",
+                              size: NSSize(width: 880, height: 200), dark: dark, panel: true)
+        }
+        // Adopt Existing: one unregistered ~/.claude-* directory next to the registered ones.
+        try FileManager.default.createDirectory(at: temp.paths.userHome.appendingPathComponent(".claude-side-project"), withIntermediateDirectories: true)
+        for dark in [false, true] {
+            try await capture(AdoptExistingSheet(), model: model, name: "sheet-adopt\(dark ? "-dark" : "")", size: NSSize(width: 560, height: 460), dark: dark, panel: true)
+        }
+        // The command line tool, run for real against the sample home.
+        let transcript = try await SampleData.commandLineTranscript(temp: temp, commands: [["list"], ["usage", "work"], ["sessions"]])
+        try await capture(TerminalTranscript(entries: transcript), model: model, name: "cli", size: NSSize(width: 880, height: 400), dark: true, panel: true)
     }
 
     private func capture<V: View>(_ view: V, model: AppModel, name: String, size: NSSize, dark: Bool, panel: Bool = false) async throws {
@@ -331,5 +356,106 @@ extension SampleData {
         try model.statuslineStore.apply()
         try model.statuslineStore.setManaged(true, for: work, account: "me@work.example", plan: "Max 20x")
         model.refreshLocalState()
+    }
+}
+
+extension SampleData {
+    /// A shared-extensions sync that changed something, the command line tool linked into the
+    /// sample home's ~/.local/bin, and a projects folder.
+    static func addSettingsSamples(_ model: AppModel) async throws {
+        let home = model.paths.userHome
+        let work = model.profiles[1], personal = model.profiles[2]
+        // A skill made while work was active, and an MCP server added while personal was.
+        let skill = URL(fileURLWithPath: work.configDir).appendingPathComponent("skills/release-notes")
+        try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
+        try Data("---\nname: release-notes\ndescription: Drafts release notes from the commits since the last tag.\n---\n".utf8)
+            .write(to: skill.appendingPathComponent("SKILL.md"))
+        try Data(#"{"oauthAccount":{"emailAddress":"me@home.example","organizationType":"claude_pro"},"mcpServers":{"linear":{"type":"http","url":"https://mcp.linear.app/mcp"}}}"#.utf8)
+            .write(to: URL(fileURLWithPath: personal.configDir).appendingPathComponent(".claude.json"))
+        model.authStore.reloadDetails(model.profiles)
+        model.liveChecksEnabled = true
+        model.syncSharedExtensions()
+        model.liveChecksEnabled = false
+        for _ in 0..<50 where model.sharedSyncAt == nil { try await Task.sleep(for: .milliseconds(100)) }
+
+        let link = model.commandLine.link(in: model.commandLine.folders[0])
+        try FileManager.default.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: model.commandLine.executable.path)
+
+        for name in ["api", "billing-service", "claude-pool", "mokanata"] {
+            try FileManager.default.createDirectory(at: home.appendingPathComponent("projects/\(name)"), withIntermediateDirectories: true)
+        }
+        model.settings.projectsFolder = "~/projects"
+        model.refreshLocalState()
+    }
+
+    /// What `claude-pool` prints for each command against the sample home, colours included.
+    static func commandLineTranscript(temp: TempDirectory, commands: [[String]]) async throws -> [(command: String, output: String)] {
+        let executable = try collectorBinary().deletingLastPathComponent().appendingPathComponent("ClaudePool")
+        var entries: [(command: String, output: String)] = []
+        for arguments in commands {
+            let recorder = CommandLineToolTests.Recorder()
+            let tool = CommandLineTool(paths: temp.paths, executable: executable, environment: ["HOME": temp.paths.userHome.path],
+                                       currentDirectory: temp.paths.userHome.path)
+            tool.colors = true
+            tool.write = { recorder.output += $0 }
+            tool.writeError = { recorder.output += $0 }
+            _ = await tool.run(arguments)
+            entries.append(((["claude-pool"] + arguments).joined(separator: " "), recorder.output))
+        }
+        return entries
+    }
+}
+
+/// A dark terminal showing `claude-pool` commands and their real output, with its ANSI styles.
+struct TerminalTranscript: View {
+    let entries: [(command: String, output: String)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 0) {
+                        Text("~ $ ").foregroundStyle(Self.green)
+                        Text(entry.command).foregroundStyle(.white).bold()
+                    }
+                    Text(Self.styled(entry.output.trimmingCharacters(in: .newlines)))
+                }
+            }
+        }
+        .font(.system(size: 12, design: .monospaced))
+        .foregroundStyle(Color(white: 0.86))
+        .padding(.horizontal, 20)
+        .padding(.top, 40)
+        .padding(.bottom, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(red: 0.09, green: 0.09, blue: 0.11))
+    }
+
+    private static let green = Color(red: 0.45, green: 0.85, blue: 0.45)
+
+    /// Text with the CLI's styles (bold, dim, red, green, yellow) applied in place of their escapes.
+    static func styled(_ text: String) -> AttributedString {
+        var result = AttributedString()
+        var style: String?
+        for (index, part) in text.components(separatedBy: "\u{1B}[").enumerated() {
+            var chunk = Substring(part)
+            if index > 0, let end = chunk.firstIndex(of: "m") {
+                let code = String(chunk[..<end])
+                style = code == "0" ? nil : code
+                chunk = chunk[chunk.index(after: end)...]
+            }
+            var piece = AttributedString(String(chunk))
+            switch style {
+            case "1": piece.font = .system(size: 12, weight: .bold, design: .monospaced); piece.foregroundColor = .white
+            case "2": piece.foregroundColor = Color(white: 0.55)
+            case "31": piece.foregroundColor = Color(red: 1, green: 0.42, blue: 0.4)
+            case "32": piece.foregroundColor = green
+            case "33": piece.foregroundColor = Color(red: 0.95, green: 0.78, blue: 0.3)
+            default: break
+            }
+            result += piece
+        }
+        return result
     }
 }

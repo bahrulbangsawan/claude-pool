@@ -37,7 +37,7 @@ final class AppModel {
     private(set) var sharedSyncChanges: [String] = []
     private(set) var sharedSyncError: String?
     /// What the last update check found; see `checkForUpdates`.
-    private(set) var updateState: UpdateState = .idle
+    var updateState: UpdateState = .idle
     /// Whether that check came from Check for Updates… (the menu shows only those results).
     private(set) var updateCheckWasManual = false
     private(set) var lastUpdateCheck: Date?
