@@ -29,6 +29,8 @@ struct AppSettings: Codable, Hashable, Sendable {
     var collectorOutput: CollectorOutputMode = .summary
     /// Keeps MCP servers, skills, plugins, hooks and permission rules the same in every profile.
     var shareExtensions: Bool = true
+    /// Checks GitHub for a new release at launch and every 6 hours, and installs it.
+    var updateAutomatically: Bool = true
     var lastHistoryPrune: Date?
 
     init() {}
@@ -49,6 +51,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         suggestAccountEnabled = try c.decodeIfPresent(Bool.self, forKey: .suggestAccountEnabled) ?? defaults.suggestAccountEnabled
         collectorOutput = try c.decodeIfPresent(CollectorOutputMode.self, forKey: .collectorOutput) ?? defaults.collectorOutput
         shareExtensions = try c.decodeIfPresent(Bool.self, forKey: .shareExtensions) ?? defaults.shareExtensions
+        updateAutomatically = try c.decodeIfPresent(Bool.self, forKey: .updateAutomatically) ?? defaults.updateAutomatically
         lastHistoryPrune = try c.decodeIfPresent(Date.self, forKey: .lastHistoryPrune)
     }
 }

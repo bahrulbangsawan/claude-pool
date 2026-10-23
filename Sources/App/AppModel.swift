@@ -36,6 +36,15 @@ final class AppModel {
     private(set) var sharedSyncAt: Date?
     private(set) var sharedSyncChanges: [String] = []
     private(set) var sharedSyncError: String?
+    /// What the last update check found; see `checkForUpdates`.
+    private(set) var updateState: UpdateState = .idle
+    /// Whether that check came from Check for Updates… (the menu shows only those results).
+    private(set) var updateCheckWasManual = false
+    private(set) var lastUpdateCheck: Date?
+    /// The `claude-pool` link on the PATH; see `CommandLineInstaller`.
+    private(set) var commandLineState: CommandLineInstallState = .notInstalled
+    private(set) var isChangingCommandLine = false
+    var commandLineError: String?
 
     /// What the manager window shows; the menu's warning row jumps to Diagnostics.
     var route: ManagerRoute = .overview
@@ -64,12 +73,15 @@ final class AppModel {
     @ObservationIgnored let handoffService = SessionHandoffService()
     @ObservationIgnored let loginItem = LoginItemService()
     @ObservationIgnored let notifier = LimitNotifier()
+    @ObservationIgnored let updater: UpdateService
+    @ObservationIgnored let commandLine: CommandLineInstaller
     @ObservationIgnored private var alertTracker = LimitAlertTracker()
     @ObservationIgnored private var maintenanceTimer: Timer?
     @ObservationIgnored private var sharedSyncTimer: Timer?
     @ObservationIgnored private var sharedSyncTask: Task<Void, Never>?
     @ObservationIgnored private var sharedSyncPending = false
     @ObservationIgnored private var activationObserver: NSObjectProtocol?
+    @ObservationIgnored private var commandLineObserver: NSObjectProtocol?
     @ObservationIgnored private var started = false
     /// Off only in UI snapshots, so sample sign-in states are not replaced by live checks.
     @ObservationIgnored var liveChecksEnabled = true
@@ -91,6 +103,12 @@ final class AppModel {
         installer = CollectorInstaller(pool: paths.pool, bundledHelper: bundledHelper)
         locator = ClaudeBinaryLocator(home: paths.userHome)
         diagnosticsService = DiagnosticsService(home: paths.userHome, loginShell: loginShell)
+        updater = UpdateService(home: paths.userHome, workDirectory: paths.caches.appendingPathComponent("Updates", isDirectory: true))
+        commandLine = CommandLineInstaller(
+            home: paths.userHome,
+            executable: Bundle.main.executableURL ?? Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/ClaudePool"),
+            loginShell: loginShell
+        )
     }
 
     var settings: AppSettings {
@@ -122,6 +140,7 @@ final class AppModel {
         }
         collectorState = installer.state()
         launcher.cleanUpOldScripts()
+        updater.cleanUp()
         usageStore.start()
         // Records current levels without notifying, so a launch never repeats old alerts.
         checkLimitAlerts()
@@ -168,11 +187,18 @@ final class AppModel {
             Task { @MainActor in await self?.appDidBecomeActive() }
         }
 
+        commandLineObserver = DistributedNotificationCenter.default().addObserver(
+            forName: CommandLineTool.profilesChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.reloadProfiles() }
+        }
+
         // Mark as locating before the first frame so the "not found" banner never flashes.
         isLocatingBinary = true
         Task {
             await locateBinary()
             await runDiagnostics()
+            await checkForUpdatesIfDue()
         }
     }
 
@@ -206,6 +232,12 @@ final class AppModel {
         isLocatingBinary = false
     }
 
+    /// Uses a binary found some other way: the claude-pool command takes the one on its own PATH,
+    /// which is quicker than asking a login shell.
+    func useBinary(_ binary: ClaudeBinary) {
+        self.binary = binary
+    }
+
     /// The binary, waiting for a lookup that is still running (or starting one if never located).
     /// Sign-in checks use this so they never run while the binary is still being located.
     func resolvedBinary() async -> ClaudeBinary? {
@@ -217,6 +249,7 @@ final class AppModel {
     /// Re-reads cheap local state: shell block, collector hash, statusLine keys.
     func refreshLocalState() {
         shellStatus = shell.status()
+        commandLineState = commandLine.state()
         collectorState = installer.state()
         var states: [UUID: TrackingState] = [:]
         for profile in profiles { states[profile.id] = patcher.state(for: profile) }
@@ -240,6 +273,7 @@ final class AppModel {
         pruneHistoryIfDue()
         authStore.reloadDetails(profiles)
         syncStatuslineContext()
+        Task { await checkForUpdatesIfDue() }
     }
 
     private func pruneHistoryIfDue() {
@@ -348,6 +382,75 @@ final class AppModel {
         if forSignIn {
             authStore.scheduleCheckAfterSignIn(profile) { [weak self] in self?.binary }
         }
+    }
+
+    // MARK: Updates
+
+    static let updateCheckInterval: TimeInterval = 6 * 60 * 60
+
+    /// Automatic checks: at launch, then every 6 hours, while Update automatically is on. A failed
+    /// check (offline) is retried at the next maintenance tick.
+    func checkForUpdatesIfDue(now: Date = Date()) async {
+        guard liveChecksEnabled, settings.updateAutomatically else { return }
+        if let lastUpdateCheck, now.timeIntervalSince(lastUpdateCheck) < Self.updateCheckInterval { return }
+        await checkForUpdates(manual: false)
+    }
+
+    /// Asks GitHub for the latest release. An automatic check installs a newer one right away;
+    /// Check for Updates… only reports it, and Install and Relaunch installs it.
+    func checkForUpdates(manual: Bool = true) async {
+        guard !isUpdating else { return }
+        updateCheckWasManual = manual
+        updateState = .checking
+        do {
+            let release = try await updater.latestRelease()
+            lastUpdateCheck = Date()
+            guard let current = AppVersion.current, release.version > current else {
+                updateState = .upToDate
+                return
+            }
+            updateState = .available(release)
+            if !manual, canUpdateAutomatically { await installUpdate(release) }
+        } catch {
+            updateState = .failed(error.localizedDescription)
+        }
+    }
+
+    /// A check or an install is running.
+    var isUpdating: Bool {
+        switch updateState {
+        case .checking, .installing: true
+        default: false
+        }
+    }
+
+    /// Never in the middle of a sign-in, and only for a copy in an Applications folder, so a
+    /// development build is never replaced behind the developer's back.
+    private var canUpdateAutomatically: Bool {
+        loginFlow == nil && Bundle.main.bundleURL.deletingLastPathComponent().lastPathComponent == "Applications"
+    }
+
+    /// Downloads and verifies `release`, puts it next to this app, and quits; a small script swaps
+    /// the two once Claude Pool has quit and opens the new version. Running claude sessions are
+    /// separate processes and keep running.
+    func installUpdate(_ release: AppRelease) async {
+        guard !isUpdating else { return }
+        updateState = .installing(release)
+        do {
+            guard let bundleID = Bundle.main.bundleIdentifier else {
+                throw UpdateError.cannotInstall("this copy of Claude Pool has no bundle identifier.")
+            }
+            let staged = try await updater.download(release, bundleIdentifier: bundleID)
+            try await updater.install(staged, over: Bundle.main.bundleURL, waitingFor: getpid())
+            NSApp.terminate(nil)
+        } catch {
+            updateState = .failed(error.localizedDescription)
+        }
+    }
+
+    func dismissUpdateMessage() {
+        updateCheckWasManual = false
+        if case .failed = updateState { updateState = .idle }
     }
 
     /// Installs herdr with its official installer, for Open in › herdr.
@@ -711,6 +814,29 @@ final class AppModel {
 
     // MARK: Profiles
 
+    /// The claude-pool command changed profiles, a sign-in or the active profile: re-reads them and
+    /// everything that depends on them.
+    func reloadProfiles() {
+        let before = Set(profiles.map(\.id))
+        profileStore.load()
+        for id in before.subtracting(profiles.map(\.id)) {
+            authStore.forget(id)
+            alertTracker.forget(id)
+            trackingStates[id] = nil
+            if loginFlow?.profile.id == id { loginFlow?.cancel(); loginFlow = nil }
+            if route == .profile(id) { route = .overview }
+        }
+        try? writeProfileDirectories()
+        refreshLocalState()
+        usageStore.reload()
+        statuslineStore.load(profiles: profiles)
+        authStore.reloadDetails(profiles)
+        syncSharedExtensions()
+        if liveChecksEnabled {
+            Task { await refreshAllAuth() }
+        }
+    }
+
     func deleteProfile(_ profile: Profile, moveDirectoryToTrash: Bool, restoreSettings: Bool) throws {
         if restoreSettings, profile.trackingEnabled {
             try patcher.disable(profile)
@@ -758,6 +884,33 @@ final class AppModel {
     func uninstallShellIntegration() throws -> URL? {
         defer { shellStatus = shell.status() }
         return try shell.uninstall()
+    }
+
+    // MARK: Command line tool
+
+    func installCommandLineTool() async {
+        await changeCommandLine { try await $0.install() }
+    }
+
+    func uninstallCommandLineTool() async {
+        await changeCommandLine { try await $0.uninstall() }
+    }
+
+    private func changeCommandLine(_ change: (CommandLineInstaller) async throws -> Void) async {
+        guard !isChangingCommandLine else { return }
+        isChangingCommandLine = true
+        defer {
+            isChangingCommandLine = false
+            commandLineState = commandLine.state()
+        }
+        do {
+            try await change(commandLine)
+            commandLineError = nil
+        } catch CommandLineInstallError.cancelled {
+            commandLineError = nil
+        } catch {
+            commandLineError = error.localizedDescription
+        }
     }
 
     // MARK: Shared extensions

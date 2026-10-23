@@ -21,6 +21,7 @@ struct MenuBarView: View {
                 }
                 .padding([.horizontal, .bottom], Space.sm)
             }
+            MenuUpdateBanner()
 
             if let active = model.profileStore.activeProfile {
                 LaunchReadinessLine(profile: active)
@@ -87,6 +88,14 @@ struct MenuBarView: View {
                     .font(.meta)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: Space.xs) {
+                    Text("Claude Pool \(AppVersion.current?.description ?? "development build")")
+                        .foregroundStyle(.secondary)
+                    Button("Check for Updates…") { Task { await model.checkForUpdates() } }
+                        .buttonStyle(.link)
+                        .disabled(model.isUpdating)
+                }
+                .font(.meta)
                 HStack {
                     Button("Open Claude Pool…") { openManager(nil) }
                     Spacer()

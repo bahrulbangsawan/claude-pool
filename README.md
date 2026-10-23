@@ -39,6 +39,8 @@ curl -fsSL https://raw.githubusercontent.com/bahrulbangsawan/claude-pool/main/in
   - [MCP servers and sign-ins](#mcp-servers-and-sign-ins)
   - [Diagnostics](#diagnostics)
   - [Settings](#settings)
+  - [Updates](#updates)
+  - [Command line](#command-line)
 - [Install](#install)
 - [Getting started](#getting-started)
 - [How it works](#how-it-works)
@@ -62,6 +64,7 @@ Click it for the panel:
 - **Every profile** with its 5-hour and 7-day bars, how fresh the values are, a ↻ **Check Usage Now** button and a Terminal button. Click a row (or press ⌘1–⌘9) to make it active.
 - A warning when a **running session uses another account**, and when **Diagnostics** need attention.
 - **CPU and memory** of this Mac and of all running `claude` sessions.
+- **Check for Updates…**, and a line with **Install** when a new version is out.
 
 ### Overview
 
@@ -155,7 +158,44 @@ One page checks everything switching and tracking depend on: the Claude Code bin
 
 <p align="center"><img src="docs/screenshots/settings.png" width="880" alt="Settings page"></p>
 
-Install or remove the shell integration (or copy the snippet), point to a custom `claude` binary, choose whether Open Terminal uses Terminal or a herdr tab (with an in-app herdr install), set the working directory for new windows and an optional projects folder that Open Terminal picks a project from, choose what the menu bar shows, share extensions across profiles, configure limit alerts, the collector's output, and launch at login.
+Install or remove the shell integration (or copy the snippet), point to a custom `claude` binary, choose whether Open Terminal uses Terminal or a herdr tab (with an in-app herdr install), set the working directory for new windows and an optional projects folder that Open Terminal picks a project from, choose what the menu bar shows, share extensions across profiles, configure limit alerts, the collector's output, updates, and launch at login.
+
+### Updates
+
+**Settings › Updates › Update automatically** (on by default) checks GitHub for a new release at launch and every 6 hours. When there is one, Claude Pool downloads its disk image, checks it, installs it over itself and reopens. Running `claude` sessions are separate processes and keep running. **Check for Updates…** (in Settings and at the bottom of the menu panel) checks right away and offers **Install and Relaunch**. Turn automatic updates off and nothing is checked unless you click it. Details: [Updates](#updates-1).
+
+### Command line
+
+Everything you'd click through, from any terminal or herdr pane. Install it in **Settings › Command Line Tool**; the [one-line installer](#install) adds it too when it can.
+
+```sh
+claude-pool work                     # start claude as Work, right here in this terminal or herdr pane
+claude-pool work api                 # …in ~/projects/api (any start of a folder name in your projects folder)
+claude-pool work api --herdr         # …in a new herdr tab instead (-t for a new Terminal window)
+claude-pool work -c                  # options claude-pool doesn't know go to claude
+claude-pool list                     # accounts, who they're signed in as, plan and 5h / 7d usage
+claude-pool use work                 # make Work active, as clicking it in the menu does
+claude-pool add "Side Project"       # add an account and sign it in, in this terminal
+```
+
+| Command | Does |
+|---|---|
+| `list` (`ls`) | Every account: active marker, number, name, slug, email, plan, 5h and 7d usage. `--json` for scripts. |
+| `open [account] [folder]` | Starts `claude` as the account (the active one if omitted) in this terminal. `[folder]` is a path or a folder in the projects folder. `-t`/`--terminal`, `--herdr` or `--new` (Settings' choice) open a new window or tab instead. Anything after `--`, or from the first option claude-pool doesn't know, goes to `claude`. `claude-pool <account>` is short for it. |
+| `use <account>` (`switch`) | Makes it active: a plain `claude` started afterwards uses it (with the shell integration). |
+| `current` | Prints the active account's name. |
+| `add <name>` | Adds an account (`~/.claude-<slug>` unless `--dir`), turns on usage tracking for a new folder (`--no-track` to skip), then runs Claude Code's sign-in here (`--no-login` to skip). Also `--email`, `--slug`, `--color`, `--use`. |
+| `login <account>` / `logout <account>` | Claude Code's own `claude auth login` / `logout` for that account. Options after the account (`--email`, `--sso`, `--console`) go to it. |
+| `status [account]` | Checks sign-in now with `claude auth status`. Exits with 1 if any is signed out. |
+| `usage [account]` | 5-hour and 7-day usage with reset times. `--check` asks for current numbers first (one tiny request per account, a few hundred tokens). |
+| `sessions` | Running `claude` sessions: account, PID, state, folder, age. |
+| `projects` | Folders in the projects folder. |
+| `env [account]` | Prints the `export` that pins the current shell to an account: `eval "$(claude-pool env work)"`. |
+| `rename <account> <name>` | Renames it (`--slug` to change the slug too). The folder and sign-in stay. |
+| `remove <account>` (`rm`) | Removes it from Claude Pool after asking (`--yes` to skip). The folder and sign-in stay unless `--trash`. |
+| `help [command]`, `version` | |
+
+An `<account>` is its name, its slug, its number in `list`, or the start of its name (`claude-pool 2`, or `claude-pool pers` for Personal). Details: [Command line](#command-line-1).
 
 ---
 
@@ -181,12 +221,14 @@ curl -fsSL https://raw.githubusercontent.com/bahrulbangsawan/claude-pool/main/in
 
 Or build it yourself: see [Build, test, run](#build-test-run).
 
+The installer also adds the [`claude-pool` command](#command-line) when `~/.local/bin`, `/opt/homebrew/bin` or `/usr/local/bin` is on your PATH and writable. Otherwise add it from **Settings › Command Line Tool**.
+
 ## Getting started
 
 1. Click the crab in the menu bar › **Open Claude Pool…**. Your existing `~/.claude` sign-in is already there as **Default**.
 2. **Add Account** › enter a name. The directory defaults to `~/.claude-<name>` (mode 0700). Sign in in the sheet, in your browser.
 3. Click a profile › **Set Active**. Claude Pool verifies the switch and tells you which account new launches will use.
-4. Install the shell integration (**Settings › Shell Integration › Install…**) so a plain `claude` in any new terminal follows the active profile. Without it, use **Open Terminal**.
+4. Install the shell integration (**Settings › Shell Integration › Install…**) so a plain `claude` in any new terminal follows the active profile. Without it, use **Open Terminal**, or install the [command line tool](#command-line) and run `claude-pool <account>`.
 5. Optionally turn on **Usage tracking** for each profile to see its 5-hour and 7-day windows, then start a `claude` session and send one message.
 
 Run `/status` inside `claude` to see which account a session is using.
@@ -300,6 +342,25 @@ The MCP Servers page asks Claude Code itself; it never reads `.claude.json` for 
 - **Several profiles.** One sign-in runs at a time (they share the localhost callback port); a successful one moves on by itself, **Skip** leaves a profile for later. **Sign In to All** and the sidebar badge leave out claude.ai connectors, which an organisation can offer by the dozen; their own rows still sign them in.
 - **Add and remove.** `claude mcp add --transport http|sse --scope user <name> <url>` and `claude mcp remove <name>`, in every profile while Shared Extensions is on (so the sync agrees), otherwise in the profiles you choose. A server that is already there, or already gone, is not an error. Signing out is `claude mcp logout <name>`.
 
+### Updates
+
+`UpdateService` runs `/usr/bin/curl` (the app links no networking API) for two requests, both to GitHub:
+
+1. `GET https://api.github.com/repos/bahrulbangsawan/claude-pool/releases/latest`, decoded narrowly: the tag, the release page, and each asset's name, download URL and `digest`. Nothing is sent beyond the request itself: no identifier, account or usage data.
+2. The release's `.dmg`, only when its version is newer than the running one.
+
+Before anything is replaced, the download must match the SHA-256 GitHub publishes for the asset, and the app inside the mounted image must have Claude Pool's bundle identifier, exactly the release's version, and pass `codesign --verify --deep --strict`. The new app is copied next to the current one (`.ClaudePool-update.app`), Claude Pool quits, and a small script started in its own session waits for it to exit, swaps the two bundles (putting the old one back if the swap fails) and opens the app. Automatic installs happen only for a copy in an `Applications` folder and never during an in-app sign-in. A copy in a folder that needs an administrator password can't update itself; use the [installer](#install) instead.
+
+### Command line
+
+`claude-pool` is not a separate program: it's a symbolic link to the app's own executable (`ClaudePool.app/Contents/MacOS/ClaudePool`), which runs `CommandLineTool` instead of the menu bar app when it is started under that name. So it reads and writes the same `profiles.json`, `~/.claude-pool/active` pointer and settings as the app, uses the same validation, launcher scripts and herdr client, and an update that replaces the app keeps it current. It never writes the app's settings.
+
+- **Install.** Settings › Command Line Tool links it in the first of `~/.local/bin` and `/opt/homebrew/bin` that is on your login shell's `PATH` and writable, and otherwise in `/usr/local/bin`, where macOS asks for an administrator password (`osascript … with administrator privileges`, paths passed as arguments). An existing Claude Pool link is updated where it is; any other file named `claude-pool` is never replaced. **Remove** deletes only links that point at a `ClaudePool` executable.
+- **`open` here** replaces `claude-pool` with `claude` (`execve`), with `CLAUDE_CONFIG_DIR` set to the profile's directory (unset for Default) and the rest of your environment unchanged, so the session is exactly a `claude` you typed yourself. `claude` is the Settings override, else the first one on your `PATH`, else the usual install locations. `--terminal` / `--herdr` use the same launcher as **Open Terminal**.
+- **`login`, `logout`, `add`** run `claude auth login` / `logout` attached to your terminal, as a shell would (Ctrl-C reaches Claude Code). `add` creates the profile like **Add Account**: a new folder gets usage tracking right away, an existing folder only through the app's before/after confirmation.
+- **The running app** is told through a distributed notification (`ClaudePool.profilesChanged`, no payload) after every change, and re-reads profiles, the pointer and sign-in status.
+- `env` for Default prints `unset CLAUDE_CONFIG_DIR` plus a `claude` function that skips the shell integration's lookup, since the integration would otherwise send that shell to the active account.
+
 ### CPU and memory
 
 `ResourceStore` samples every 3 seconds with kernel counters only. It never signals or attaches to any process.
@@ -407,7 +468,7 @@ Values are whole percentages. The bar uses the accent colour below 70%, orange f
 **Never:**
 
 - reads, parses, copies, displays, exports or logs any credential, token, credentials file, or Keychain item. The Security framework is not imported, and no `SecItem*` API is used. Sign-in codes are passed to Claude Code's stdin, and MCP redirect addresses to its terminal, then discarded.
-- makes any network access: no `URLSession`, Network framework, sockets or telemetry; no calls to any Anthropic endpoint; no scraping, interception or proxying. (`claude auth login`, `auth status` and the `claude mcp` commands are Claude Code itself.)
+- makes any network access of its own beyond [Updates](#updates-1) (GitHub's release API and the release download, through `/usr/bin/curl`, which you can turn off) and the herdr installer you start: no `URLSession`, Network framework, sockets or telemetry; no calls to any Anthropic endpoint; no scraping, interception or proxying. (`claude auth login`, `auth status` and the `claude mcp` commands are Claude Code itself.)
 - reads prompts, responses or tool output. Conversation files are only scanned for usage numbers, or copied byte-for-byte during a handoff you confirm.
 - uses or generates OAuth-token environment variables or long-lived tokens.
 - switches automatically (by usage, limits, errors, timers or heuristics), rotates or load-balances accounts, moves conversations without your confirmation, re-sends requests, or forecasts usage. The opt-in limit alerts and suggestion (see *Limit alerts and suggestion*) only inform you; they are off by default, and every switch is your click.
@@ -449,6 +510,8 @@ Sandbox entitlements cannot express "a user-chosen dotfile in `$HOME`, persisten
 | `~/.claude-pool/shared-sync-state.json` | Shared extensions: which entries each profile held at the last sync | 0600 |
 | `~/.claude-pool/backups/shared-sync/<time>/` | Shared extensions: copies of each file before it changed, last 10 runs | 0700 |
 | `~/Library/Caches/ClaudePool/launch-*.command` | Terminal launcher scripts, deleted after 24h | 0700 |
+| `~/.local/bin/claude-pool`, `/opt/homebrew/bin/claude-pool` or `/usr/local/bin/claude-pool` | The [command line tool](#command-line-1): a link to the app's executable, only if you install it | link |
+| `~/Library/Caches/ClaudePool/Updates/` | Update download, its mounted image and the staged app; removed at the next launch | 0700 |
 | `~/Library/Caches/ClaudePool/login-<id>/` | URL-recording `BROWSER` script during an in-app sign-in; removed when it ends | 0700 |
 | `~/Library/Application Support/ClaudePool/usage-index.sqlite` | Token usage index (numbers, model, time, profile); 62 days | 0600 |
 | `~/Library/Application Support/ClaudePool/statusline-presets.json` | Saved status line presets | 0600 |

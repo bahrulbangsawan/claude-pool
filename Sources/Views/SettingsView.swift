@@ -61,6 +61,8 @@ struct SettingsView: View {
                 }
             }
 
+            commandLineCard
+
             Card(title: "Menu Bar") {
                 VStack(spacing: Space.xs) {
                     SettingRow(title: "Show active profile name") {
@@ -98,6 +100,8 @@ struct SettingsView: View {
                     .fixedSize()
                 }
             }
+
+            UpdatesCard()
 
             Card(title: "Startup") {
                 SettingRow(title: "Open at login", detail: loginItemStatus) {
@@ -206,6 +210,47 @@ struct SettingsView: View {
                 showingInstall = false
             }
             .keyboardShortcut(.defaultAction)
+        }
+    }
+
+    // MARK: Command line tool
+
+    private var commandLineCard: some View {
+        let state = model.commandLineState
+        return Card(title: "Command Line Tool", subtitle: "Use your accounts from any terminal or herdr pane: claude-pool work starts claude as Work right there.") {
+            switch state {
+            case .installed: StatusBadge(text: "Installed", systemImage: "checkmark.circle.fill", tint: .statusOK)
+            case .otherCopy: StatusBadge(text: "Other Copy", systemImage: "arrow.triangle.2.circlepath", tint: .statusWarn)
+            case .notInstalled: StatusBadge(text: "Not Installed", systemImage: "minus.circle", tint: .secondary)
+            }
+        } content: {
+            switch state {
+            case let .installed(link):
+                FactRow(label: "Command") { Text(model.paths.abbreviate(link)).font(.rowDetail.monospaced()) }
+            case let .otherCopy(link):
+                InlineMessage(kind: .info, text: "\(model.paths.abbreviate(link)) starts another copy of Claude Pool. Install to point it at this one.")
+            case .notInstalled:
+                Text("Adds claude-pool to a folder on your PATH, as a link to this app. If none of your own folders is on the PATH, macOS asks for an administrator password to use /usr/local/bin.")
+                    .font(.meta)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: Space.xs) {
+                Button(state == .notInstalled ? "Install" : "Reinstall") { Task { await model.installCommandLineTool() } }
+                Button("Remove") { Task { await model.uninstallCommandLineTool() } }
+                    .disabled(state == .notInstalled)
+                if model.isChangingCommandLine { ProgressView().controlSize(.small) }
+                Spacer()
+            }
+            .disabled(model.isChangingCommandLine)
+            Text("claude-pool list · claude-pool open work ~/projects/api · claude-pool use work · claude-pool help")
+                .font(.rowDetail.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            if let error = model.commandLineError {
+                InlineMessage(kind: .error, text: error) { model.commandLineError = nil }
+            }
         }
     }
 

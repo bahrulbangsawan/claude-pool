@@ -42,5 +42,24 @@ else
 fi
 xattr -dr com.apple.quarantine "$DEST/$APP" 2>/dev/null || true
 
+# The claude-pool command: a link to the app, in the first of these folders that is on your PATH
+# and writable. Anything else already named claude-pool is left alone.
+CLI=""
+for dir in "$HOME/.local/bin" /opt/homebrew/bin /usr/local/bin; do
+	case ":$PATH:" in *":$dir:"*) ;; *) continue ;; esac
+	[ -d "$dir" ] && [ -w "$dir" ] || continue
+	link="$dir/claude-pool"
+	target=$(readlink "$link" 2>/dev/null || true)
+	if { [ ! -e "$link" ] && [ ! -L "$link" ]; } || [ "${target##*/}" = ClaudePool ]; then
+		ln -sfn "$DEST/$APP/Contents/MacOS/ClaudePool" "$link" && CLI="$link"
+	fi
+	break
+done
+
 open "$DEST/$APP"
 echo "Claude Pool is installed. Look for the crab in the menu bar."
+if [ -n "$CLI" ]; then
+	echo "Use your accounts from any terminal with claude-pool (claude-pool help)."
+else
+	echo "To use claude-pool in a terminal, add it in Claude Pool › Settings › Command Line Tool."
+fi

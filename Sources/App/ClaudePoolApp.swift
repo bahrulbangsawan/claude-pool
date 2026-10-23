@@ -1,6 +1,22 @@
 import SwiftUI
 
+/// Runs the menu bar app, or the command-line tool when started as `claude-pool` (the link that
+/// Settings › Command Line Tool installs).
 @main
+enum ClaudePoolMain {
+    @MainActor
+    static func main() {
+        if CommandLineTool.isInvoked(as: CommandLine.arguments.first) {
+            let arguments = Array(CommandLine.arguments.dropFirst())
+            Task { @MainActor in
+                exit(await CommandLineTool.live().run(arguments))
+            }
+            dispatchMain()
+        }
+        ClaudePoolApp.main()
+    }
+}
+
 struct ClaudePoolApp: App {
     @State private var model: AppModel
 
