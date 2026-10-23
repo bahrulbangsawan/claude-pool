@@ -14,7 +14,7 @@ enum ProfileValidationError: Error, LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .nameEmpty: "Enter a name."
+        case .nameEmpty: "Enter a name with at least one letter or digit."
         case .nameTooLong: "Names can be at most \(Profile.maxNameLength) characters."
         case .nameTaken: "Another profile already uses this name."
         case .slugInvalid: "Slugs use lowercase letters, digits and single hyphens (a-z, 0-9, -)."
@@ -72,10 +72,12 @@ final class ProfileStore {
         } catch {
             lastError = "Couldn't read profiles.json: \(error.localizedDescription). Your profiles were reset to Default; restore the file from a backup to recover them."
         }
-        normalize()
+        let renamed = normalize()
         if !profiles.contains(where: \.isDefault) {
             profiles.insert(Profile.makeDefault(home: paths.userHome, now: Self.wholeSeconds(now())), at: 0)
             reindex()
+            save()
+        } else if renamed {
             save()
         }
         reloadActive()
@@ -116,12 +118,13 @@ final class ProfileStore {
         }
     }
 
+    /// Checks the name as it will be saved, that is after `Profile.normalizedName`.
     func validate(name: String, slug: String, configDir: String, excluding id: UUID? = nil) throws {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw ProfileValidationError.nameEmpty }
-        guard trimmed.count <= Profile.maxNameLength else { throw ProfileValidationError.nameTooLong }
+        let normalized = Profile.normalizedName(name)
+        guard !normalized.isEmpty else { throw ProfileValidationError.nameEmpty }
+        guard normalized.count <= Profile.maxNameLength else { throw ProfileValidationError.nameTooLong }
         let others = profiles.filter { $0.id != id }
-        guard !others.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) else {
+        guard !others.contains(where: { $0.name.caseInsensitiveCompare(normalized) == .orderedSame }) else {
             throw ProfileValidationError.nameTaken
         }
         guard Slug.isValid(slug) else { throw ProfileValidationError.slugInvalid }
@@ -142,7 +145,7 @@ final class ProfileStore {
         try AtomicFile.ensureDirectory(URL(fileURLWithPath: dir, isDirectory: true), permissions: 0o700)
         let profile = Profile(
             id: UUID(),
-            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            name: Profile.normalizedName(name),
             slug: slug,
             configDir: dir,
             colorHex: colorHex ?? ProfileColor.presets[profiles.count % ProfileColor.presets.count].hex,
@@ -163,7 +166,7 @@ final class ProfileStore {
         var updated = profile
         if updated.isDefault { updated.configDir = profiles[index].configDir }
         try validate(name: updated.name, slug: updated.slug, configDir: updated.configDir, excluding: updated.id)
-        updated.name = updated.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.name = Profile.normalizedName(updated.name)
         let wasActive = activeProfileID == updated.id
         let dirChanged = profiles[index].configDir != updated.configDir
         profiles[index] = updated
@@ -199,7 +202,8 @@ final class ProfileStore {
 
     // MARK: Persistence
 
-    private func normalize() {
+    /// Returns whether a name had to change.
+    private func normalize() -> Bool {
         profiles.sort { ($0.sortIndex, $0.createdAt) < ($1.sortIndex, $1.createdAt) }
         // Exactly one Default.
         var seenDefault = false
@@ -210,6 +214,26 @@ final class ProfileStore {
         if let index = profiles.firstIndex(where: \.isDefault) {
             profiles[index].configDir = paths.defaultConfigDir.path
         }
+        // Names are kebab-case. Earlier versions took any text ("Work", "Client — Northwind"), so
+        // those are converted once, in order, with -2, -3… where two would come out the same.
+        var renamed = false
+        var taken: Set<String> = []
+        for index in profiles.indices {
+            var base = Slug.make(from: profiles[index].name)
+            if base.isEmpty { base = Slug.isValid(profiles[index].slug) ? profiles[index].slug : "profile" }
+            var name = base
+            var counter = 2
+            while taken.contains(name) {
+                name = Slug.make(from: "\(base.prefix(Profile.maxNameLength - 4))-\(counter)")
+                counter += 1
+            }
+            taken.insert(name)
+            if profiles[index].name != name {
+                profiles[index].name = name
+                renamed = true
+            }
+        }
+        return renamed
     }
 
     private func reindex() {

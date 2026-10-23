@@ -195,7 +195,7 @@ claude-pool add "Side Project"       # add an account and sign it in, in this te
 | `remove <account>` (`rm`) | Removes it from Claude Pool after asking (`--yes` to skip). The folder and sign-in stay unless `--trash`. |
 | `help [command]`, `version` | |
 
-An `<account>` is its name, its slug, its number in `list`, or the start of its name (`claude-pool 2`, or `claude-pool pers` for Personal). Details: [Command line](#command-line-1).
+An `<account>` is its name, its slug, its number in `list`, or the start of its name (`claude-pool 2`, or `claude-pool pers` for `personal`). Details: [Command line](#command-line-1).
 
 ---
 
@@ -225,8 +225,8 @@ The installer also adds the [`claude-pool` command](#command-line) when `~/.loca
 
 ## Getting started
 
-1. Click the crab in the menu bar › **Open Claude Pool…**. Your existing `~/.claude` sign-in is already there as **Default**.
-2. **Add Account** › enter a name. The directory defaults to `~/.claude-<name>` (mode 0700). Sign in in the sheet, in your browser.
+1. Click the crab in the menu bar › **Open Claude Pool…**. Your existing `~/.claude` sign-in is already there as `default`.
+2. **Add Account** › enter a name. Names are kebab-case: lowercase letters, digits and hyphens, and anything else you type turns into a hyphen as you type (`My Work` → `my-work`). The directory defaults to `~/.claude-<name>` (mode 0700). Sign in in the sheet, in your browser.
 3. Click a profile › **Set Active**. Claude Pool verifies the switch and tells you which account new launches will use.
 4. Install the shell integration (**Settings › Shell Integration › Install…**) so a plain `claude` in any new terminal follows the active profile. Without it, use **Open Terminal**, or install the [command line tool](#command-line) and run `claude-pool <account>`.
 5. Optionally turn on **Usage tracking** for each profile to see its 5-hour and 7-day windows, then start a `claude` session and send one message.
@@ -561,6 +561,7 @@ Sandbox entitlements cannot express "a user-chosen dotfile in `$HOME`, persisten
 - **`make live-check`** runs `LiveAuditTests` (skipped in `make test`). For every registered profile it compares the app's sign-in result with `claude auth status` run in your login shell, checks the shell probes, tracking state, displayed usage states and collector hash. It writes nothing.
 - **Tests** use Swift Testing, which ships with the CLT; XCTest does not. The Makefile adds the CLT framework search paths automatically.
 - **Collector output setting.** The collector reads `~/.claude-pool/collector-output` (`summary`/`none`). The status line command format is fixed (`… --profile <UUID>`), so the setting can't be passed as an argument without rewriting every profile's `settings.json` whenever it changes. This is the one file the collector reads besides its own snapshot, history and chain files.
+- **Profile names are kebab-case** (lowercase a–z, 0–9, single hyphens), the same rule as slugs, so a name can be typed anywhere (`claude-pool my-work`) without quoting. Name fields convert as you type instead of refusing input; `ProfileStore` converts again on save, so the command line and the Add and Adopt sheets follow the same rule. Names saved by earlier versions (`Work`, `Client — Northwind`) are converted once on load (`work`, `client-northwind`), with `-2`, `-3`… if two would come out the same.
 - **`CLAUDE_POOL_HOME`** overrides `~/.claude-pool` for the collector, so subprocess tests run against a temp directory.
 - **History records only the windows present in each run.** Absent windows are not carried forward, so the chart never shows a value that was not reported at that moment. Line segments are split at each observed reset.
 - **Rounding.** Percentages are rounded to the nearest integer for display, and colour thresholds use the rounded value.

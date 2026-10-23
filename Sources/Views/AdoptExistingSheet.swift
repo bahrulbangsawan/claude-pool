@@ -55,10 +55,9 @@ struct AdoptExistingSheet: View {
         errors = []
         for url in selected.sorted(by: { $0.path < $1.path }) {
             let suffix = String(url.lastPathComponent.dropFirst(".claude-".count))
-            let baseName = suffix.isEmpty ? url.lastPathComponent : suffix.prefix(1).uppercased() + suffix.dropFirst()
-            let (name, slug) = uniqueNameAndSlug(String(baseName.prefix(Profile.maxNameLength - 3)))
+            let name = uniqueName(Slug.make(from: suffix.isEmpty ? url.lastPathComponent : suffix))
             do {
-                try model.profileStore.add(name: name, slug: slug, configDir: url.path)
+                try model.profileStore.add(name: name, slug: name, configDir: url.path)
             } catch {
                 errors.append("\(model.paths.abbreviate(url.path)): \(error.localizedDescription) Rename the existing profile or choose a different directory.")
             }
@@ -67,16 +66,15 @@ struct AdoptExistingSheet: View {
         if errors.isEmpty { dismiss() }
     }
 
-    private func uniqueNameAndSlug(_ base: String) -> (String, String) {
-        let baseSlug = Slug.make(from: base).isEmpty ? "profile" : Slug.make(from: base)
+    /// The kebab-case name, also used as the slug, with -2, -3… when a profile already has it.
+    private func uniqueName(_ base: String) -> String {
+        let base = base.isEmpty ? "profile" : base
         var name = base
-        var slug = baseSlug
         var counter = 2
-        while model.profiles.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame || $0.slug == slug }) {
-            name = "\(base) \(counter)"
-            slug = "\(baseSlug)-\(counter)"
+        while model.profiles.contains(where: { $0.name == name || $0.slug == name }) {
+            name = Slug.make(from: "\(base.prefix(Profile.maxNameLength - 4))-\(counter)")
             counter += 1
         }
-        return (name, slug)
+        return name
     }
 }

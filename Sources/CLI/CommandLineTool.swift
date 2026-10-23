@@ -367,7 +367,7 @@ final class CommandLineTool {
         if let slug { profile.slug = slug }
         try model.profileStore.update(profile)
         notifyApp()
-        say("Renamed \(old) to \(profile.name.trimmingCharacters(in: .whitespacesAndNewlines)).")
+        say("Renamed \(old) to \(model.profileStore.profile(id: profile.id)?.name ?? profile.name).")
         return 0
     }
 

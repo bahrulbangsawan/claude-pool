@@ -217,7 +217,7 @@ struct SettingsView: View {
 
     private var commandLineCard: some View {
         let state = model.commandLineState
-        return Card(title: "Command Line Tool", subtitle: "Use your accounts from any terminal or herdr pane: claude-pool work starts claude as Work right there.") {
+        return Card(title: "Command Line Tool", subtitle: "Use your accounts from any terminal or herdr pane: claude-pool work starts claude as work right there.") {
             switch state {
             case .installed: StatusBadge(text: "Installed", systemImage: "checkmark.circle.fill", tint: .statusOK)
             case .otherCopy: StatusBadge(text: "Other Copy", systemImage: "arrow.triangle.2.circlepath", tint: .statusWarn)

@@ -139,8 +139,8 @@ import Testing
         #expect(try await tool(recorder).run(["list"]) == 0)
         let lines = recorder.output.split(separator: "\n").map(String.init)
         #expect(lines.count == 3)
-        #expect(lines[1].contains("Default") && !lines[1].hasPrefix("*"))
-        #expect(lines[2].hasPrefix("*") && lines[2].contains("Work") && lines[2].contains("work"))
+        #expect(lines[1].contains("default") && !lines[1].hasPrefix("*"))
+        #expect(lines[2].hasPrefix("*") && lines[2].contains("work"))
     }
 
     @Test func listPrintsJSON() async throws {
@@ -205,7 +205,7 @@ import Testing
 
         let current = Recorder()
         #expect(try await tool(current).run(["current"]) == 0)
-        #expect(current.output == "Work\n")
+        #expect(current.output == "work\n")
     }
 
     @Test func addCreatesTheProfileAndItsFolder() async throws {
@@ -241,7 +241,7 @@ import Testing
         let work = try store.add(name: "Work", slug: "work", configDir: dir(".claude-work"))
         #expect(try await tool(Recorder()).run(["rename", "work", "Job", "--slug", "job"]) == 0)
         let renamed = try #require(reloaded().profile(id: work.id))
-        #expect(renamed.name == "Job")
+        #expect(renamed.name == "job")
         #expect(renamed.slug == "job")
         #expect(renamed.configDir == work.configDir)
     }

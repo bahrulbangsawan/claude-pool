@@ -59,11 +59,13 @@ import Testing
         try store.add(name: "Work", slug: "work", configDir: dir(".claude-work"))
         #expect(throws: ProfileValidationError.nameTaken) { try store.add(name: "work", slug: "work2", configDir: dir(".claude-w2")) }
         #expect(throws: ProfileValidationError.slugTaken) { try store.add(name: "Work 2", slug: "work", configDir: dir(".claude-w2")) }
-        #expect(throws: ProfileValidationError.directoryInUse("Work")) { try store.add(name: "Other", slug: "other", configDir: dir(".claude-work")) }
-        #expect(throws: ProfileValidationError.directoryInUse("Default")) { try store.add(name: "Other", slug: "other", configDir: dir(".claude")) }
+        #expect(throws: ProfileValidationError.directoryInUse("work")) { try store.add(name: "Other", slug: "other", configDir: dir(".claude-work")) }
+        #expect(throws: ProfileValidationError.directoryInUse("default")) { try store.add(name: "Other", slug: "other", configDir: dir(".claude")) }
         #expect(throws: ProfileValidationError.directoryNotAbsolute) { try store.add(name: "Other", slug: "other", configDir: "relative/dir") }
         #expect(throws: ProfileValidationError.slugInvalid) { try store.add(name: "Other", slug: "Bad Slug", configDir: dir(".claude-o")) }
         #expect(throws: ProfileValidationError.nameEmpty) { try store.add(name: "   ", slug: "x", configDir: dir(".claude-x")) }
+        #expect(throws: ProfileValidationError.nameEmpty) { try store.add(name: "★ — !", slug: "x", configDir: dir(".claude-x")) }
+        #expect(throws: ProfileValidationError.nameTaken) { try store.add(name: "WORK!", slug: "x", configDir: dir(".claude-x")) }
         #expect(throws: ProfileValidationError.nameTooLong) { try store.add(name: String(repeating: "n", count: 33), slug: "x", configDir: dir(".claude-x")) }
         #expect(store.profiles.count == 2)
     }
@@ -133,10 +135,41 @@ import Testing
         defaultProfile.configDir = "/elsewhere"
         defaultProfile.name = "Personal"
         try store.update(defaultProfile)
-        #expect(store.defaultProfile?.name == "Personal")
+        #expect(store.defaultProfile?.name == "personal")
         #expect(store.defaultProfile?.configDir == temp.paths.userHome.appendingPathComponent(".claude").path)
         var work = try store.add(name: "Work", slug: "work", configDir: dir(".claude-work"))
         work.name = "personal"
         #expect(throws: ProfileValidationError.nameTaken) { try store.update(work) }
+    }
+
+    @Test func namesAreSavedInKebabCase() throws {
+        let added = try store.add(name: "  My Work — Client #2 ", slug: "client", configDir: dir(".claude-client"))
+        #expect(added.name == "my-work-client-2")
+        var renamed = added
+        renamed.name = "Café Ünïon"
+        try store.update(renamed)
+        #expect(reloaded().profile(id: added.id)?.name == "cafe-union")
+        #expect(store.defaultProfile?.name == "default")
+    }
+
+    @Test func olderNamesAreConvertedOnLoad() throws {
+        let profiles = [
+            Profile.makeDefault(home: temp.paths.userHome),
+            Profile(id: UUID(), name: "Work", slug: "work", configDir: dir(".claude-work"), colorHex: "#0A84FF", isDefault: false,
+                    trackingEnabled: false, originalStatusLine: nil, sortIndex: 1, createdAt: Date(timeIntervalSince1970: 1)),
+            Profile(id: UUID(), name: "work ", slug: "work-b", configDir: dir(".claude-work-b"), colorHex: "#0A84FF", isDefault: false,
+                    trackingEnabled: false, originalStatusLine: nil, sortIndex: 2, createdAt: Date(timeIntervalSince1970: 2)),
+            Profile(id: UUID(), name: "★", slug: "star", configDir: dir(".claude-star"), colorHex: "#0A84FF", isDefault: false,
+                    trackingEnabled: false, originalStatusLine: nil, sortIndex: 3, createdAt: Date(timeIntervalSince1970: 3)),
+        ]
+        var legacyDefault = profiles[0]
+        legacyDefault.name = "Default"
+        try ProfileStore.encoder.encode([legacyDefault] + profiles.dropFirst()).write(to: temp.paths.profilesFile)
+
+        let loaded = reloaded()
+        #expect(loaded.profiles.map(\.name) == ["default", "work", "work-2", "star"])
+        // Written back, so the next load (and the collector's view) agrees.
+        let onDisk = try ProfileStore.decoder.decode([Profile].self, from: Data(contentsOf: temp.paths.profilesFile))
+        #expect(onDisk.map(\.name) == ["default", "work", "work-2", "star"])
     }
 }

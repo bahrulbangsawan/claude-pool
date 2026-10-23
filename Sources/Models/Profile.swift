@@ -3,7 +3,7 @@ import Foundation
 /// One separately signed-in Claude Code account, identified by its config directory.
 struct Profile: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
-    var name: String               // unique, 1–32 chars
+    var name: String               // unique, 1–32 chars, kebab-case (see `normalizedName`)
     var slug: String               // [a-z0-9-], unique
     var configDir: String          // absolute; Default = $HOME/.claude
     var colorHex: String
@@ -15,10 +15,16 @@ struct Profile: Identifiable, Codable, Hashable, Sendable {
 
     static let maxNameLength = 32
 
+    /// Names are kebab-case like slugs: lowercase letters, digits and single hyphens. Whatever is
+    /// typed is converted rather than refused: "My Work!" → "my-work".
+    static func normalizedName(_ text: String) -> String {
+        Slug.kebab(text)
+    }
+
     static func makeDefault(home: URL, now: Date = Date()) -> Profile {
         Profile(
             id: UUID(),
-            name: "Default",
+            name: "default",
             slug: "default",
             configDir: home.appendingPathComponent(".claude").path,
             colorHex: ProfileColor.presets[0].hex,

@@ -56,6 +56,7 @@ enum Help {
               Adds an account with its own Claude Code folder (~/.claude-<slug> unless --dir says
               otherwise), turns on usage tracking for a new folder, then runs Claude Code's sign-in
               in this terminal. An existing folder is added as it is, like Adopt in the app.
+              Names are kebab-case: "Side Project" becomes side-project.
 
                 --email <email>   Pre-fill the sign-in page
                 --dir <folder>    Use this folder instead of ~/.claude-<slug>
@@ -104,7 +105,7 @@ enum Help {
               """),
         Entry(name: "rename", usage: "claude-pool rename <account> <new name> [--slug <slug>]",
               summary: "Rename an account",
-              details: "Changes the name, and with --slug the slug. Its folder and sign-in stay."),
+              details: "Changes the name (made kebab-case: lowercase letters, digits, hyphens), and with --slug the slug. Its folder and sign-in stay."),
         Entry(name: "remove", aliases: ["rm"], usage: "claude-pool remove <account> [--trash] [--yes]",
               summary: "Remove an account from Claude Pool",
               details: """

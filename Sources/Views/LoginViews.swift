@@ -228,8 +228,9 @@ struct AddAccountSheet: View {
         SheetScaffold(title: "Add Account", subtitle: "Each account gets its own Claude Code config directory and sign-in. You'll sign in on the next step, without Terminal.") {
             VStack(spacing: Space.sm) {
                 field("Name") {
-                    TextField("Name", text: Binding(get: { name }, set: { name = $0; nameEdited = true }), prompt: Text("Work"))
+                    TextField("Name", text: Binding(get: { name }, set: { name = $0; nameEdited = true }), prompt: Text("work"))
                         .labelsHidden().textFieldStyle(.roundedBorder)
+                        .help("Lowercase letters, digits and hyphens. Spaces and other characters become a hyphen.")
                 }
                 field("Email") {
                     TextField("Email", text: $emailHint, prompt: Text("Optional — pre-fills the sign-in page"))
@@ -255,13 +256,16 @@ struct AddAccountSheet: View {
                 }
             }
             .onChange(of: name) { _, value in
+                let typed = Slug.typing(value)
+                // Runs again with the converted name.
+                guard typed == value else { name = typed; return }
                 if !slugEdited { slug = Slug.make(from: value) }
                 if !directoryEdited { directory = defaultDirectory(for: slug) }
             }
             .onChange(of: emailHint) { _, value in
                 // Name the account after its email unless a name was typed.
                 if !nameEdited || name.isEmpty {
-                    name = String(value.prefix(Profile.maxNameLength))
+                    name = Slug.make(from: value)
                     nameEdited = false
                     slug = Slug.make(from: name)
                     if !directoryEdited { directory = defaultDirectory(for: slug) }

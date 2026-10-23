@@ -282,12 +282,16 @@ struct ProfileDetailView: View {
     private var profileCard: some View {
         Card(title: "Profile") {
             VStack(spacing: Space.xs) {
-                SettingRow(title: "Name") {
+                SettingRow(title: "Name", detail: "Lowercase letters, digits and hyphens. Spaces and other characters become a hyphen.") {
                     TextField("Name", text: $name)
                         .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 220)
                         .onSubmit(saveName)
+                        .onChange(of: name) { _, value in
+                            let typed = Slug.typing(value)
+                            if typed != value { name = typed }
+                        }
                 }
                 Divider()
                 SettingRow(title: "Color") {
@@ -347,7 +351,8 @@ struct ProfileDetailView: View {
         var updated = current
         updated.name = name
         save(updated)
-        if basicsError != nil { name = current.name }
+        // The saved form (no trailing hyphen), or the old name when saving failed.
+        name = current.name
     }
 
     private func changeDirectory() {
