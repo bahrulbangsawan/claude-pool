@@ -74,7 +74,7 @@ The Overview shows the active account in detail: email, organisation, plan, both
 
 Each profile is one Claude Code config directory with its own sign-in. Its page shows:
 
-- **Set Active** and **Open Terminal** (runs `claude` with that profile, even without the shell integration), in a new Terminal window or a new [herdr](https://herdr.dev) tab.
+- **Set Active** and **Open Terminal** (runs `claude` with that profile, even without the shell integration), in a new Terminal window or a new [herdr](https://herdr.dev) tab. With a **projects folder** set in Settings (such as `~/projects`), Open Terminal first asks which project to open and starts there; the window or tab is named after both, as in `mokanata · Work`.
 - The plan, as specifically as Claude Code's data allows (Pro, Max 5x, Max 20x, Team seat …).
 - The **5-hour and 7-day windows** exactly as Claude Code reported them, with when they reset and how old the values are. Usage is never estimated.
 - The profile's **running sessions**.
@@ -140,7 +140,7 @@ One page checks everything switching and tracking depend on: the Claude Code bin
 
 <p align="center"><img src="docs/screenshots/settings.png" width="880" alt="Settings page"></p>
 
-Install or remove the shell integration (or copy the snippet), point to a custom `claude` binary, choose whether Open Terminal uses Terminal or a herdr tab (with an in-app herdr install), set the working directory for new windows, choose what the menu bar shows, share extensions across profiles, configure limit alerts, the collector's output, and launch at login.
+Install or remove the shell integration (or copy the snippet), point to a custom `claude` binary, choose whether Open Terminal uses Terminal or a herdr tab (with an in-app herdr install), set the working directory for new windows and an optional projects folder that Open Terminal picks a project from, choose what the menu bar shows, share extensions across profiles, configure limit alerts, the collector's output, and launch at login.
 
 ---
 

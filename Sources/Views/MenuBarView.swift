@@ -192,9 +192,7 @@ private struct MenuProfileRow: View {
                 .buttonStyle(.borderless)
 
             Button {
-                Task {
-                    do { try await model.openTerminal(profile) } catch { launchError = error.localizedDescription }
-                }
+                OpenTerminalAction.run(profile, model: model) { launchError = $0 }
             } label: {
                 Image(systemName: "terminal")
                     .frame(width: 28, height: 28)

@@ -328,9 +328,19 @@ final class AppModel {
 
     // MARK: Terminal
 
-    func openTerminal(_ profile: Profile, forSignIn: Bool = false) async throws {
+    /// Opens Terminal (or a herdr tab) running `claude` with `profile`, in `folder` (a project
+    /// picked from the projects folder) or else the working directory from Settings. A project
+    /// names the window or tab together with the profile: "mokanata · Work".
+    func openTerminal(_ profile: Profile, in folder: String? = nil, forSignIn: Bool = false) async throws {
+        if let folder {
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: paths.expandTilde(folder), isDirectory: &isDirectory), isDirectory.boolValue else {
+                throw AppModelError.folderMissing(paths.abbreviate(folder))
+            }
+        }
         guard let binary else { throw AppModelError.binaryMissing }
-        try await launcher.launch(profile, workingDirectory: settings.defaultWorkingDirectory, claudePath: binary.path, in: settings.terminalHost)
+        let title = folder.map { "\(URL(fileURLWithPath: $0).lastPathComponent) · \(profile.name)" }
+        try await launcher.launch(profile, workingDirectory: folder ?? settings.defaultWorkingDirectory, claudePath: binary.path, title: title, in: settings.terminalHost)
         if forSignIn {
             authStore.scheduleCheckAfterSignIn(profile) { [weak self] in self?.binary }
         }
@@ -770,6 +780,7 @@ enum AppModelError: Error, LocalizedError, Equatable {
     case targetNotReady(String, String)
     case sessionGone
     case sessionBusy
+    case folderMissing(String)
 
     var errorDescription: String? {
         switch self {
@@ -777,6 +788,7 @@ enum AppModelError: Error, LocalizedError, Equatable {
         case let .targetNotReady(name, reason): "“\(name)” can't take over this conversation because \(reason). Sign it in first, then try again."
         case .sessionGone: "That session has already ended."
         case .sessionBusy: "The session is working on a response. Wait until it is idle, or end it in its Terminal window."
+        case let .folderMissing(folder): "\(folder) doesn't exist. Choose another folder."
         }
     }
 }

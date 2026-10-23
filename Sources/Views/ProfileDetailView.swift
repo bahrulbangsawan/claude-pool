@@ -314,12 +314,17 @@ struct ProfileDetailView: View {
         }
     }
 
+    /// Sign-in always starts in the working directory; it never asks for a project.
     private func launch(signIn: Bool) {
+        guard signIn else {
+            OpenTerminalAction.run(current, model: model) { actionError = $0 }
+            return
+        }
         Task {
             do {
-                try await model.openTerminal(current, forSignIn: signIn)
+                try await model.openTerminal(current, forSignIn: true)
                 actionError = nil
-                if signIn { signInHint = true }
+                signInHint = true
             } catch {
                 actionError = error.localizedDescription
             }

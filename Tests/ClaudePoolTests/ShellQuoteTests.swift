@@ -39,7 +39,7 @@ import Testing
 
 @Suite struct TerminalLauncherTests {
     @Test func defaultProfileUnsetsConfigDir() {
-        let script = TerminalLauncher.script(profileName: "Default", configDir: nil, workingDirectory: "/Users/x", claudePath: "/opt/homebrew/bin/claude")
+        let script = TerminalLauncher.script(title: "Default", configDir: nil, workingDirectory: "/Users/x", claudePath: "/opt/homebrew/bin/claude")
         #expect(script.hasPrefix("#!/bin/zsh\n"))
         #expect(script.contains("\nunset CLAUDE_CONFIG_DIR\n"))
         #expect(!script.contains("export CLAUDE_CONFIG_DIR"))
@@ -48,7 +48,7 @@ import Testing
     }
 
     @Test func nonDefaultProfileExportsQuotedDir() {
-        let script = TerminalLauncher.script(profileName: "Bob's work", configDir: "/Users/x/.claude-bob's", workingDirectory: "/tmp/a b", claudePath: "/x/claude")
+        let script = TerminalLauncher.script(title: "Bob's work", configDir: "/Users/x/.claude-bob's", workingDirectory: "/tmp/a b", claudePath: "/x/claude")
         #expect(script.contains("export CLAUDE_CONFIG_DIR='/Users/x/.claude-bob'\\''s'"))
         #expect(script.contains("printf '\\e]0;Claude Pool — %s\\a' 'Bob'\\''s work'"))
         #expect(script.contains("cd '/tmp/a b' 2>/dev/null || cd \"$HOME\""))
@@ -65,7 +65,7 @@ import Testing
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeClaude.path)
 
         for configValue in [configDir.path, nil] as [String?] {
-            let script = TerminalLauncher.script(profileName: "Name 'x' $(id)", configDir: configValue, workingDirectory: workDir.path, claudePath: fakeClaude.path)
+            let script = TerminalLauncher.script(title: "Name 'x' $(id)", configDir: configValue, workingDirectory: workDir.path, claudePath: fakeClaude.path)
             let scriptURL = try temp.write(script, to: "launch.command")
             let result = try runProcess(
                 URL(fileURLWithPath: "/bin/zsh"), [scriptURL.path],
@@ -102,6 +102,41 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: old.path))
         #expect(FileManager.default.fileExists(atPath: fresh.path))
         #expect(FileManager.default.fileExists(atPath: other.path))
+    }
+
+    @Test func projectTitlesTheWindowAndStartsInTheProject() throws {
+        let temp = try TempDirectory()
+        let launcher = TerminalLauncher(paths: temp.paths)
+        let profile = Profile.makeDefault(home: temp.paths.userHome)
+        let project = try launcher.writeScript(for: profile, workingDirectory: "~/projects/mokanata", claudePath: "/x/claude", title: "mokanata · Default")
+        #expect(readText(project)?.contains("printf '\\e]0;Claude Pool — %s\\a' 'mokanata · Default'") == true)
+        #expect(readText(project)?.contains("cd '\(temp.paths.userHome.path)/projects/mokanata'") == true)
+        let plain = try launcher.writeScript(for: profile, workingDirectory: "~", claudePath: "/x/claude")
+        #expect(readText(plain)?.contains("printf '\\e]0;Claude Pool — %s\\a' '\(profile.name)'") == true)
+    }
+
+    @MainActor
+    @Test func missingProjectFolderIsReportedBeforeLaunching() async throws {
+        let temp = try TempDirectory()
+        let model = AppModel(paths: temp.paths, loginShell: "/bin/zsh", bundledHelper: try collectorBinary())
+        let profile = Profile.makeDefault(home: temp.paths.userHome)
+        await #expect(throws: AppModelError.folderMissing("~/projects/gone")) {
+            try await model.openTerminal(profile, in: temp.paths.userHome.appendingPathComponent("projects/gone").path)
+        }
+        let file = try temp.write("x", to: "home/projects/notes.txt")
+        await #expect(throws: AppModelError.folderMissing("~/projects/notes.txt")) {
+            try await model.openTerminal(profile, in: file.path)
+        }
+    }
+
+    @Test func projectsFolderIsOptionalAndRoundTrips() throws {
+        let old = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"defaultWorkingDirectory":"~/code"}"#.utf8))
+        #expect(old.projectsFolder == nil)
+
+        var settings = AppSettings()
+        settings.projectsFolder = "~/projects"
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+        #expect(decoded.projectsFolder == "~/projects")
     }
 
     @Test func writtenScriptIsOwnerExecutable() throws {

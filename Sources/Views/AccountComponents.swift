@@ -61,6 +61,34 @@ struct CheckUsageButton: View {
     }
 }
 
+/// What every Open Terminal button does. With a projects folder set in Settings, it first asks
+/// which project to start in, beginning in that folder; Cancel opens nothing.
+@MainActor
+enum OpenTerminalAction {
+    /// `onResult` gets the error message, or nil after a successful launch.
+    static func run(_ profile: Profile, model: AppModel, onResult: @escaping (String?) -> Void = { _ in }) {
+        var folder: String?
+        if let projects = model.settings.projectsFolder {
+            // A menu bar app is not frontmost; without this the panel opens behind other windows.
+            NSApp.activate()
+            guard let url = Panels.chooseDirectory(
+                startingAt: model.paths.expandTilde(projects),
+                prompt: model.settings.terminalHost == .herdr ? "Open in herdr" : "Open in Terminal",
+                message: "Choose the project to open with \(profile.name)."
+            ) else { return }
+            folder = url.path
+        }
+        Task {
+            do {
+                try await model.openTerminal(profile, in: folder)
+                onResult(nil)
+            } catch {
+                onResult(error.localizedDescription)
+            }
+        }
+    }
+}
+
 /// "Usable", "5-hour limit reached · resets 14:05 (in 2h)", from reported windows only.
 struct AvailabilityBadge: View {
     let availability: AccountAvailability

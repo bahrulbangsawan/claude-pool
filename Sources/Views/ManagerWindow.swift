@@ -95,7 +95,7 @@ struct ManagerWindow: View {
     private func profileMenu(_ profile: Profile) -> some View {
         Button("Set Active") { model.setActive(profile) }
             .disabled(model.profileStore.activeProfileID == profile.id)
-        Button("Open Terminal") { Task { try? await model.openTerminal(profile) } }
+        Button("Open Terminal") { OpenTerminalAction.run(profile, model: model) }
             .disabled(model.binary == nil)
         Button("Sign In…") { model.signInRequest = profile }
             .disabled(model.binary == nil)

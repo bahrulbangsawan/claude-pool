@@ -40,7 +40,9 @@ struct SettingsView: View {
                     }
                     if model.settings.terminalHost == .herdr { herdrStatus }
                     Divider()
-                    SettingRow(title: "Working directory", detail: "New Terminal windows and herdr tabs start here, then run claude with the profile.") {
+                    SettingRow(title: "Working directory", detail: model.settings.projectsFolder == nil
+                               ? "New Terminal windows and herdr tabs start here, then run claude with the profile."
+                               : "Sign In with Terminal starts here. Open Terminal asks for a project instead.") {
                         HStack(spacing: Space.xs) {
                             TextField("Working directory", text: $settingsStore.settings.defaultWorkingDirectory)
                                 .labelsHidden()
@@ -54,6 +56,8 @@ struct SettingsView: View {
                             }
                         }
                     }
+                    Divider()
+                    projectsFolderRow
                 }
             }
 
@@ -319,6 +323,35 @@ struct SettingsView: View {
         }
         if let error = model.herdrInstallError {
             InlineMessage(kind: .error, text: error) { model.herdrInstallError = nil }
+        }
+    }
+
+    /// Optional parent of the user's projects; an empty field turns the project prompt off.
+    private var projectsFolderRow: some View {
+        let folder = model.settings.projectsFolder
+        let detail = if let folder, !FileManager.default.fileExists(atPath: model.paths.expandTilde(folder)) {
+            "This folder doesn't exist. Choose the folder that holds your projects."
+        } else if folder != nil {
+            "Open Terminal first asks which project in this folder to open. Clear the field to turn this off."
+        } else {
+            "Set the folder that holds your projects, such as ~/projects, and Open Terminal asks which one to open."
+        }
+        return SettingRow(title: "Projects folder", detail: detail) {
+            HStack(spacing: Space.xs) {
+                TextField("Not set", text: Binding(
+                    get: { model.settings.projectsFolder ?? "" },
+                    set: { model.settings.projectsFolder = $0.isEmpty ? nil : $0 }
+                ))
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+                .font(.body.monospaced())
+                .frame(width: 200)
+                Button("Choose…") {
+                    if let url = Panels.chooseDirectory(startingAt: model.paths.expandTilde(folder ?? "~")) {
+                        model.settings.projectsFolder = model.paths.abbreviate(url.path)
+                    }
+                }
+            }
         }
     }
 

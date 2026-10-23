@@ -26,7 +26,7 @@ struct ActiveAccountCard: View {
                     .buttonStyle(.borderless)
                 Button("Details") { model.route = .profile(profile.id) }
                 Button {
-                    Task { do { try await model.openTerminal(profile) } catch { self.error = error.localizedDescription } }
+                    OpenTerminalAction.run(profile, model: model) { error = $0 }
                 } label: {
                     Label("Open Terminal", systemImage: "terminal")
                 }
@@ -119,7 +119,7 @@ struct AccountCard: View {
                 Button("Set Active") { model.setActive(profile) }
                     .disabled(isActive)
                 Button {
-                    Task { do { try await model.openTerminal(profile) } catch { self.error = error.localizedDescription } }
+                    OpenTerminalAction.run(profile, model: model) { error = $0 }
                 } label: {
                     Label("Terminal", systemImage: "terminal")
                 }

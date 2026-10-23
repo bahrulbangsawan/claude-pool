@@ -389,8 +389,9 @@ struct SheetScaffold<Content: View, Buttons: View>: View {
 
 @MainActor
 enum Panels {
-    static func chooseDirectory(startingAt path: String?, prompt: String = "Choose") -> URL? {
+    static func chooseDirectory(startingAt path: String?, prompt: String = "Choose", message: String? = nil) -> URL? {
         let panel = NSOpenPanel()
+        if let message { panel.message = message }
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false

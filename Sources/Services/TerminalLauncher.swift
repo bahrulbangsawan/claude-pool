@@ -21,13 +21,14 @@ struct TerminalLauncher: Sendable {
     let paths: Paths
     var herdr: HerdrClient { HerdrClient(home: paths.userHome) }
 
-    /// The launcher script. Every interpolated value goes through `ShellQuote`.
-    static func script(profileName: String, configDir: String?, workingDirectory: String, claudePath: String, arguments: [String] = []) -> String {
+    /// The launcher script; `title` names the Terminal window. Every interpolated value goes
+    /// through `ShellQuote`.
+    static func script(title: String, configDir: String?, workingDirectory: String, claudePath: String, arguments: [String] = []) -> String {
         let envLine = configDir.map { "export CLAUDE_CONFIG_DIR=\(ShellQuote.quote($0))" } ?? "unset CLAUDE_CONFIG_DIR"
         let command = ([claudePath] + arguments).map(ShellQuote.quote).joined(separator: " ")
         return """
         #!/bin/zsh
-        printf '\\e]0;Claude Pool — %s\\a' \(ShellQuote.quote(profileName))
+        printf '\\e]0;Claude Pool — %s\\a' \(ShellQuote.quote(title))
         \(envLine)
         cd \(ShellQuote.quote(workingDirectory)) 2>/dev/null || cd "$HOME"
         \(command)
@@ -36,11 +37,11 @@ struct TerminalLauncher: Sendable {
         """
     }
 
-    func writeScript(for profile: Profile, workingDirectory: String, claudePath: String, arguments: [String] = []) throws -> URL {
+    func writeScript(for profile: Profile, workingDirectory: String, claudePath: String, arguments: [String] = [], title: String? = nil) throws -> URL {
         try AtomicFile.ensureDirectory(paths.caches, permissions: 0o700)
         let url = paths.caches.appendingPathComponent("launch-\(UUID().uuidString).command")
         let text = Self.script(
-            profileName: profile.name,
+            title: title ?? profile.name,
             configDir: profile.configDirEnvironmentValue,
             workingDirectory: paths.expandTilde(workingDirectory),
             claudePath: claudePath,
@@ -69,19 +70,21 @@ struct TerminalLauncher: Sendable {
         return url
     }
 
+    /// `title` names the Terminal window or herdr tab; the profile name when nil.
     @MainActor
-    func launch(_ profile: Profile, workingDirectory: String, claudePath: String, arguments: [String] = [], in host: TerminalHost = .terminal) async throws {
-        let script = try writeScript(for: profile, workingDirectory: workingDirectory, claudePath: claudePath, arguments: arguments)
+    func launch(_ profile: Profile, workingDirectory: String, claudePath: String, arguments: [String] = [], title: String? = nil, in host: TerminalHost = .terminal) async throws {
+        let script = try writeScript(for: profile, workingDirectory: workingDirectory, claudePath: claudePath, arguments: arguments, title: title)
+        let label = title ?? profile.name
         guard host == .herdr else { return try await openInTerminal(script) }
         let herdr = herdr
         guard let binary = herdr.binary else { throw HerdrError.notInstalled }
         let directory = paths.expandTilde(workingDirectory)
         do {
-            try await herdr.openTab(running: script, label: profile.name, workingDirectory: directory)
+            try await herdr.openTab(running: script, label: label, workingDirectory: directory)
         } catch HerdrError.notRunning {
             try await openInTerminal(try writeHerdrScript(herdrPath: binary.path, workingDirectory: workingDirectory))
             guard await herdr.waitForServer() else { throw HerdrError.startTimedOut }
-            try await herdr.openTab(running: script, label: profile.name, workingDirectory: directory)
+            try await herdr.openTab(running: script, label: label, workingDirectory: directory)
         }
         HerdrClient.hostApplication()?.activate()
     }

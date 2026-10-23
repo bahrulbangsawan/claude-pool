@@ -12,6 +12,9 @@ enum TerminalHost: String, Codable, Hashable, Sendable, CaseIterable {
 struct AppSettings: Codable, Hashable, Sendable {
     var claudePathOverride: String?
     var defaultWorkingDirectory: String = "~"
+    /// The folder that holds the user's projects. When set, Open Terminal first asks which
+    /// project folder to start in, beginning here.
+    var projectsFolder: String?
     var terminalHost: TerminalHost = .terminal
     var showNameInMenuBar: Bool = true
     /// Active profile's 5-hour and 7-day usage, as "5h:23% · 7d:41%".
@@ -36,6 +39,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         let defaults = AppSettings()
         claudePathOverride = try c.decodeIfPresent(String.self, forKey: .claudePathOverride)
         defaultWorkingDirectory = try c.decodeIfPresent(String.self, forKey: .defaultWorkingDirectory) ?? defaults.defaultWorkingDirectory
+        projectsFolder = try c.decodeIfPresent(String.self, forKey: .projectsFolder)
         terminalHost = try c.decodeIfPresent(TerminalHost.self, forKey: .terminalHost) ?? defaults.terminalHost
         showNameInMenuBar = try c.decodeIfPresent(Bool.self, forKey: .showNameInMenuBar) ?? defaults.showNameInMenuBar
         showActiveUsageInMenuBar = try c.decodeIfPresent(Bool.self, forKey: .showActiveUsageInMenuBar) ?? defaults.showActiveUsageInMenuBar
