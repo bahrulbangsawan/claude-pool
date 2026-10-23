@@ -42,6 +42,7 @@ actor ProcessRunner {
         arguments: [String],
         environment: [String: String],
         currentDirectory: URL? = nil,
+        input: Data? = nil,
         timeout: TimeInterval
     ) async throws -> ProcessResult {
         await acquire()
@@ -52,7 +53,7 @@ actor ProcessRunner {
                 do {
                     let result = try Self.runBlocking(
                         executable, arguments: arguments, environment: env,
-                        currentDirectory: currentDirectory, timeout: timeout
+                        currentDirectory: currentDirectory, input: input, timeout: timeout
                     )
                     continuation.resume(returning: result)
                 } catch {
@@ -84,6 +85,7 @@ actor ProcessRunner {
         arguments: [String],
         environment: [String: String],
         currentDirectory: URL?,
+        input: Data?,
         timeout: TimeInterval
     ) throws -> ProcessResult {
         let process = Process()
@@ -93,7 +95,8 @@ actor ProcessRunner {
         if let currentDirectory { process.currentDirectoryURL = currentDirectory }
         let outPipe = Pipe()
         let errPipe = Pipe()
-        process.standardInput = FileHandle.nullDevice
+        let inPipe = input.map { _ in Pipe() }
+        process.standardInput = inPipe ?? FileHandle.nullDevice
         process.standardOutput = outPipe
         process.standardError = errPipe
 
@@ -103,6 +106,13 @@ actor ProcessRunner {
             try process.run()
         } catch {
             throw ProcessRunnerError.launchFailed(executable.path, error.localizedDescription)
+        }
+        if let inPipe, let input {
+            let writer = inPipe.fileHandleForWriting
+            DispatchQueue.global().async {
+                try? writer.write(contentsOf: input)
+                try? writer.close()
+            }
         }
 
         let out = DataBox()
@@ -157,6 +167,17 @@ enum ChildEnvironment {
             "LOGNAME": user,
             "PATH": basePath,
             "TERM": "dumb",
+            "LANG": "en_US.UTF-8",
+        ]
+    }
+
+    /// Environment for the herdr CLI, which finds its server socket under HOME.
+    static func herdr(home: URL, user: String = NSUserName()) -> [String: String] {
+        [
+            "HOME": home.path,
+            "USER": user,
+            "LOGNAME": user,
+            "PATH": basePath,
             "LANG": "en_US.UTF-8",
         ]
     }

@@ -13,33 +13,76 @@ struct SnapshotWriter {
         try AtomicFile.ensureDirectory(paths.home)
         try AtomicFile.ensureDirectory(paths.usageDirectory)
 
-        var snapshot = loadSnapshot() ?? UsageSnapshot(profileId: profileID, lastSeenAt: now)
+        let stored = loadSnapshot()
+        var snapshot = stored ?? UsageSnapshot(profileId: profileID, lastSeenAt: now)
         snapshot.schema = UsageSnapshot.currentSchema
         snapshot.profileId = profileID
-        let fiveHour = input.fiveHour.flatMap { Self.fresh($0, over: snapshot.fiveHour, now: now) }
-        let sevenDay = input.sevenDay.flatMap { Self.fresh($0, over: snapshot.sevenDay, now: now) }
-        if let fiveHour { snapshot.fiveHour = Self.usageWindow(fiveHour) }
-        if let sevenDay { snapshot.sevenDay = Self.usageWindow(sevenDay) }
+        let current = try currentWindows(input, stored: stored)
+        if let window = current.fiveHour { snapshot.fiveHour = Self.usageWindow(window) }
+        if let window = current.sevenDay { snapshot.sevenDay = Self.usageWindow(window) }
         snapshot.lastSeenAt = now
-        if fiveHour != nil || sevenDay != nil { snapshot.observedAt = now }
+        if current.observed { snapshot.observedAt = now }
         if let version = input.version { snapshot.claudeVersion = String(version.prefix(64)) }
 
         let data = try UsageCoding.makeEncoder().encode(snapshot)
         try AtomicFile.write(data, to: paths.snapshot(for: profileID), permissions: 0o600)
 
-        if fiveHour != nil || sevenDay != nil { try appendHistoryIfNeeded(fiveHour: fiveHour, sevenDay: sevenDay) }
+        if current.observed { try appendHistoryIfNeeded(Self.historyEntry(snapshot, input: input, now: now)) }
+    }
+
+    /// The windows to store, and whether this report is a current observation. With a session key
+    /// the choice comes from `ReporterLog`; without one (older Claude Code), from `fresh`.
+    private func currentWindows(_ input: RateLimitInput, stored: UsageSnapshot?) throws
+        -> (fiveHour: RateLimitInput.Window?, sevenDay: RateLimitInput.Window?, observed: Bool) {
+        guard input.hasAnyWindow else { return (nil, nil, false) }
+        if let key = input.sessionKey {
+            let url = paths.reporters(for: profileID)
+            var log = ReporterLog.load(url) ?? ReporterLog(since: now.timeIntervalSince1970)
+            let choice = log.record(key: key, fiveHour: input.fiveHour, sevenDay: input.sevenDay, now: now)
+            try log.save(to: url)
+            return (choice.fiveHour, choice.sevenDay, choice.fromThisReport)
+        }
+        let afterGap = stored.map { now.timeIntervalSince($0.lastSeenAt) > Self.sessionGap } ?? true
+        let fiveHour = input.fiveHour.flatMap { Self.fresh($0, over: stored?.fiveHour, now: now, afterGap: afterGap) }
+        let sevenDay = input.sevenDay.flatMap { Self.fresh($0, over: stored?.sevenDay, now: now, afterGap: afterGap) }
+        return (fiveHour, sevenDay, fiveHour != nil || sevenDay != nil)
+    }
+
+    /// Both current windows after the merge, so reports from several sessions can't make
+    /// consecutive entries differ. A stored window that has reset is left out unless this report
+    /// carries that window (Claude Code stops sending a window once it resets).
+    static func historyEntry(_ snapshot: UsageSnapshot, input: RateLimitInput, now: Date) -> UsageHistoryEntry {
+        func current(_ window: UsageWindow?, reported: Bool) -> UsageWindow? {
+            guard let window, reported || window.resetsAt > now else { return nil }
+            return window
+        }
+        let fiveHour = current(snapshot.fiveHour, reported: input.fiveHour != nil)
+        let sevenDay = current(snapshot.sevenDay, reported: input.sevenDay != nil)
+        return UsageHistoryEntry(
+            t: now.timeIntervalSince1970.rounded(),
+            fh: fiveHour?.usedPercentage,
+            fhr: fiveHour?.resetsAt.timeIntervalSince1970,
+            sd: sevenDay?.usedPercentage,
+            sdr: sevenDay?.resetsAt.timeIntervalSince1970
+        )
     }
 
     /// Reset times closer than this are treated as the same window.
     static let sameWindowTolerance: TimeInterval = 60
 
+    /// With no collector run for this long, no session that reported before is assumed to be open.
+    static let sessionGap: TimeInterval = 120
+
     /// Returns `incoming` unless it is a stale report of the stored window.
     ///
     /// Every session sharing a config directory runs the collector, and an idle session keeps
-    /// re-reporting the rate limits from its last API response. Within one window usage never
-    /// goes down, so a lower value for the same reset time is an old report and is dropped.
-    static func fresh(_ incoming: RateLimitInput.Window, over stored: UsageWindow?, now: Date) -> RateLimitInput.Window? {
-        guard let stored else { return incoming }
+    /// re-reporting the rate limits from its last API response. While sessions keep reporting, a
+    /// lower value for the same reset time is treated as such an old report and dropped.
+    /// After a gap the value is taken as is: Claude Code sends `rate_limits` only after a session's
+    /// first API response, so a session started since reports current usage, and the server can
+    /// lower a window's usage (seen live: 100% → 77% with the same reset).
+    static func fresh(_ incoming: RateLimitInput.Window, over stored: UsageWindow?, now: Date, afterGap: Bool = false) -> RateLimitInput.Window? {
+        guard let stored, !afterGap else { return incoming }
         let storedReset = stored.resetsAt.timeIntervalSince1970
         if storedReset <= now.timeIntervalSince1970 { return incoming }
         if abs(incoming.resetsAt - storedReset) < sameWindowTolerance {
@@ -58,14 +101,8 @@ struct SnapshotWriter {
         UsageWindow(usedPercentage: window.usedPercentage, resetsAt: Date(timeIntervalSince1970: window.resetsAt))
     }
 
-    private func appendHistoryIfNeeded(fiveHour: RateLimitInput.Window?, sevenDay: RateLimitInput.Window?) throws {
-        let entry = UsageHistoryEntry(
-            t: now.timeIntervalSince1970.rounded(),
-            fh: fiveHour?.usedPercentage,
-            fhr: fiveHour?.resetsAt,
-            sd: sevenDay?.usedPercentage,
-            sdr: sevenDay?.resetsAt
-        )
+    private func appendHistoryIfNeeded(_ entry: UsageHistoryEntry) throws {
+        guard entry.fh != nil || entry.sd != nil else { return }
         let url = paths.history(for: profileID)
         if let last = Self.lastEntry(in: url),
            last.hasSameValues(as: entry),

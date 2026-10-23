@@ -86,12 +86,13 @@ struct ProfileDetailView: View {
                 }
             }
             AvailabilityBadge(availability: model.availability(current), formatting: model.formatting)
+            CheckUsageButton(profile: current, labelled: true) { actionError = $0 }
             if five == .trackingOff {
                 Button("Enable Usage Tracking…") { model.requestTrackingChange(current, enable: true) }
             } else if five == .signedOut {
                 Button("Sign In…") { model.signInRequest = current }
             } else if five == .noData {
-                Text("Claude Code reports the windows in its status line once a session with this profile gets its first response. Claude Pool doesn't contact Anthropic itself, so it can't fetch them earlier.")
+                Text("Claude Code reports the windows in its status line once a session with this profile gets its first response. Claude Pool doesn't contact Anthropic itself; Check Usage Now has Claude Code send one tiny request instead.")
                     .font(.meta).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if five.isStale || seven.isStale {
@@ -152,6 +153,7 @@ struct ProfileDetailView: View {
                     }
                 }
             }
+            AccountMismatchNote(profile: current)
             if let status, status.signedIn, !status.reportsUsage {
                 InlineMessage(kind: .warning, text: "This profile is signed in with \(status.authMethodLabel), which overrides the subscription sign-in, so usage isn't reported. Remove the exported key or apiKeyHelper, then run /login.")
             }

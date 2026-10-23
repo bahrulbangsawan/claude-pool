@@ -58,7 +58,7 @@ The menu bar shows the pixel-crab mark, the active profile and its limits (`Work
 Click it for the panel:
 
 - **Active profile** and a verified line naming the account new `claude` launches will use.
-- **Every profile** with its 5-hour and 7-day bars, how fresh the values are, and a Terminal button. Click a row (or press ⌘1–⌘9) to make it active.
+- **Every profile** with its 5-hour and 7-day bars, how fresh the values are, a ↻ **Check Usage Now** button and a Terminal button. Click a row (or press ⌘1–⌘9) to make it active.
 - A warning when a **running session uses another account**, and when **Diagnostics** need attention.
 - **CPU and memory** of this Mac and of all running `claude` sessions.
 
@@ -66,7 +66,7 @@ Click it for the panel:
 
 <p align="center"><img src="docs/screenshots/overview.png" width="880" alt="Overview page"></p>
 
-The Overview shows the active account in detail: email, organisation, plan, both usage rings with reset times, and whether switching is fully in effect (for example, a warning if the shell integration isn't installed). **All Accounts** lists every profile as a card with its plan, sign-in state, running sessions and usage bars, always in your own order.
+The Overview shows the active account in detail: email, organisation, plan, both usage rings with reset times, and whether switching is fully in effect (for example, a warning if the shell integration isn't installed). **All Accounts** lists every profile as a card with its plan, sign-in state, running sessions and usage bars, always in your own order. When two profiles show the same email but their usage resets at different times, both get a warning with **Sign In Again…**: one account has only one set of windows, so one of the saved sign-ins is out of date.
 
 ### Profiles and usage history
 
@@ -74,11 +74,11 @@ The Overview shows the active account in detail: email, organisation, plan, both
 
 Each profile is one Claude Code config directory with its own sign-in. Its page shows:
 
-- **Set Active** and **Open Terminal** (runs `claude` with that profile, even without the shell integration).
+- **Set Active** and **Open Terminal** (runs `claude` with that profile, even without the shell integration), in a new Terminal window or a new [herdr](https://herdr.dev) tab.
 - The plan, as specifically as Claude Code's data allows (Pro, Max 5x, Max 20x, Team seat …).
 - The **5-hour and 7-day windows** exactly as Claude Code reported them, with when they reset and how old the values are. Usage is never estimated.
 - The profile's **running sessions**.
-- A **history** chart of observed values over 24 hours or 7 days. Hover snaps to a real observation.
+- A **history** chart of observed values over 24 hours or 7 days, one line per window: each value holds until the next and drops to 0 at a reset. Hover snaps to a real observation.
 
 <p align="center"><img src="docs/screenshots/chart-hover.png" width="720" alt="Usage history chart with a hover tooltip"></p>
 
@@ -140,7 +140,7 @@ One page checks everything switching and tracking depend on: the Claude Code bin
 
 <p align="center"><img src="docs/screenshots/settings.png" width="880" alt="Settings page"></p>
 
-Install or remove the shell integration (or copy the snippet), point to a custom `claude` binary, set the working directory for new Terminal windows, choose what the menu bar shows, share extensions across profiles, configure limit alerts, the collector's output, and launch at login.
+Install or remove the shell integration (or copy the snippet), point to a custom `claude` binary, choose whether Open Terminal uses Terminal or a herdr tab (with an in-app herdr install), set the working directory for new windows, choose what the menu bar shows, share extensions across profiles, configure limit alerts, the collector's output, and launch at login.
 
 ---
 
@@ -247,14 +247,16 @@ Claude Code runs the `statusLine` command from settings and sends it session JSO
 
 When you enable tracking for a profile, Claude Pool points that profile's `statusLine` at its bundled helper, `claude-pool-collector`. The helper:
 
-- decodes **only** `rate_limits.five_hour`, `rate_limits.seven_day` and `version`. No other field is declared in its decoder.
+- decodes **only** `rate_limits.five_hour`, `rate_limits.seven_day`, `version` and `session_id`. No other field is declared in its decoder. `session_id` is hashed at once (first 8 bytes of SHA-256) and the ID itself is never stored.
 - merges them into `~/.claude-pool/usage/<profile-UUID>.json`. A window that is absent keeps its previous value, and the observation time is recorded.
-- ignores stale reports. Every session of a profile runs the helper, and an idle session keeps re-sending the values from its last API response. Within one window usage never goes down, so a lower value for the same reset time, or a window that has already ended, is dropped instead of overwriting the newer value.
-- appends a history line when the values change, or at most every 5 minutes.
+- ignores stale reports. Every session of a profile runs the helper, and an idle session keeps re-sending the values from its last API response. `<profile-UUID>.reporters.json` keeps each session's last values under its hash, and per window the value from the session whose report changed most recently counts (a session's first report counts as a change, since it only reports after its first API response). Usage can go down this way when the server lowers it. Without a `session_id` (older Claude Code), a lower value for the same reset time is dropped unless no session reported for 2 minutes.
+- appends a history line with both current windows when they change, or at most every 5 minutes.
 - prints your **original** status line if you had one (it runs your command with the same stdin, with a 2-second timeout). Otherwise it prints a short summary such as `5h 23% · 7d 41%`, or nothing, depending on Settings.
 - never writes to stdout on error and always exits 0. It makes no network access and runs in about 5–10 ms.
 
 The app watches the usage folder and updates the menu bar and windows within about a second of a new snapshot.
+
+**Check Usage Now** (the ↻ button on an account, for tracked claude.ai sign-ins) fills the gap when no session has run lately. Claude Pool still makes no network call itself: it runs `claude -p` once as that profile with a one-line prompt, Haiku, no tools, no MCP servers, no settings files (so no hooks or plugins) and no saved session, which costs a few hundred tokens of that account's usage. From the `stream-json` output it decodes only `rate_limit_info.unifiedWindows` of the `rate_limit_event` line (other lines are filtered out before decoding), then hands the values to the collector with `--record-only`, so they are merged like a report from a new session.
 
 ### Limit alerts and suggestion (opt-in)
 
@@ -363,13 +365,13 @@ Each window shows the first state that applies:
 6. **Stale.** The observation is more than 15 minutes old. The value is dimmed and labelled "as of …", with the note "Usage from claude.ai or other devices after this time is not included."
 7. **Fresh.**
 
-Values are whole percentages. The bar uses the accent colour below 70%, orange from 70–89% and red from 90%. Reset times show as "resets 14:05 · in 2h 13m" for 5h and "resets Thu 09:00 · in 3d 4h" for 7d, in your locale's format. Every usage view shows when it was observed. Nothing is interpolated, extrapolated or estimated. History charts draw only observed points, and line segments never cross a reset. Profiles always appear in your own order.
+Values are whole percentages. The bar uses the accent colour below 70%, orange from 70–89% and red from 90%. Reset times show as "resets 14:05 · in 2h 13m" for 5h and "resets Thu 09:00 · in 3d 4h" for 7d, in your locale's format. Every usage view shows when it was observed. Nothing is interpolated, extrapolated or estimated. History charts draw one line per window: each reported value holds until the next report, and drops to 0 at a reset that has passed. Profiles always appear in your own order.
 
 ## Compliance rules
 
 **Data sources, each through a narrow decoder:**
 
-1. The status line JSON that Claude Code pipes to the collector. Only `rate_limits.five_hour`, `rate_limits.seven_day` and `version` are **stored**. For a managed status line, display fields (model, folder, context, cost, …) are decoded in memory for that one run and printed back to Claude Code, never written.
+1. The status line JSON that Claude Code pipes to the collector. Only `rate_limits.five_hour`, `rate_limits.seven_day`, `version` and a hash of `session_id` are **stored**. For a managed status line, display fields (model, folder, context, cost, …) are decoded in memory for that one run and printed back to Claude Code, never written.
 2. The output of the unmodified `claude auth status`, through the whitelist above (now including the non-secret `orgId`, for duplicate detection).
 3. `oauthAccount` plan fields of Claude Code's global config (see *Plans*). No other key of that file is declared. (Shared extensions, below, merges `mcpServers` without decoding anything else.)
 4. Claude Code's session registry `<configDir>/sessions/<pid>.json`: pid, session id, folder, name, status, version, times.

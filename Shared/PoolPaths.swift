@@ -34,6 +34,8 @@ public struct PoolPaths: Sendable, Hashable {
     public var backupsDirectory: URL { home.appendingPathComponent("backups", isDirectory: true) }
     /// Which shared extensions each profile held at the last sync (for spreading deletions).
     public var sharedSyncState: URL { home.appendingPathComponent("shared-sync-state.json") }
+    /// Config directory → profile, for the collector (see `ProfileDirectories`).
+    public var profileDirectories: URL { home.appendingPathComponent("profile-dirs.json") }
     public var sharedSyncBackups: URL { backupsDirectory.appendingPathComponent("shared-sync", isDirectory: true) }
     /// One word, `summary` or `none`: what the collector prints when no original status line exists.
     public var collectorOutputSetting: URL { home.appendingPathComponent("collector-output") }
@@ -53,6 +55,11 @@ public struct PoolPaths: Sendable, Hashable {
 
     public func history(for profileID: UUID) -> URL {
         usageDirectory.appendingPathComponent("\(profileID.uuidString).history.jsonl")
+    }
+
+    /// What each open claude session last reported, keyed by a hash (see `ReporterLog`).
+    public func reporters(for profileID: UUID) -> URL {
+        usageDirectory.appendingPathComponent("\(profileID.uuidString).reporters.json")
     }
 
     public func chainCommand(for profileID: UUID) -> URL {

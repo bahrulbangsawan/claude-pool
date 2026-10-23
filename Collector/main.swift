@@ -1,12 +1,13 @@
 import Foundation
 import PoolShared
 
-// claude-pool-collector --profile <UUID>
+// claude-pool-collector --profile <UUID> [--record-only]
 //
 // Invoked by Claude Code as a status line command. Reads the status line JSON from stdin,
 // keeps only rate-limit fields, updates ~/.claude-pool/usage/<UUID>.json, then prints the managed
 // status line (if enabled for this profile), the user's original status line (chained), or a short
 // summary. Display fields used for a managed status line are never written to disk.
+// --record-only (Claude Pool's "Check usage now") stops after the update and prints nothing.
 //
 // Rules: never write to stdout on error, diagnostics go to stderr, always exit 0, no network.
 
@@ -52,7 +53,7 @@ func firstLine(of data: Data) -> String? {
 
 signal(SIGPIPE, SIG_IGN)
 
-guard let profileID = parseProfileID(CommandLine.arguments) else {
+guard let requestedID = parseProfileID(CommandLine.arguments) else {
     fail("usage: claude-pool-collector --profile <UUID>")
 }
 guard let inputData = readInput(limit: maxInputBytes) else {
@@ -66,12 +67,20 @@ do {
 }
 
 let paths = PoolPaths.resolve()
+let recordOnly = CommandLine.arguments.contains("--record-only")
+// A status line run can be another profile's session using the Default profile's command (see
+// ProfileDirectories); its CLAUDE_CONFIG_DIR decides. --record-only names the profile itself.
+let profileID = recordOnly ? requestedID : ProfileDirectories.load(paths.profileDirectories)?
+    .profile(forConfigDir: ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"]) ?? requestedID
 do {
     try SnapshotWriter(paths: paths, profileID: profileID, now: Date()).apply(input)
 } catch {
     // Still render the status line below; only the snapshot update failed.
     FileHandle.standardError.write(Data("claude-pool-collector: \(error.localizedDescription)\n".utf8))
+    // Claude Pool, not Claude Code, runs --record-only, so it gets the failure as an exit code.
+    if recordOnly { exit(1) }
 }
+if recordOnly { exit(0) }
 
 let chainURL = paths.chainCommand(for: profileID)
 let chainCommand: String? = readChainCommand(chainURL)

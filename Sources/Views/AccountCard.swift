@@ -22,6 +22,8 @@ struct ActiveAccountCard: View {
                     IdentityLine(profile: profile)
                 }
                 Spacer(minLength: Space.md)
+                CheckUsageButton(profile: profile) { error = $0 }
+                    .buttonStyle(.borderless)
                 Button("Details") { model.route = .profile(profile.id) }
                 Button {
                     Task { do { try await model.openTerminal(profile) } catch { self.error = error.localizedDescription } }
@@ -33,6 +35,7 @@ struct ActiveAccountCard: View {
             }
 
             LaunchReadinessLine(profile: profile)
+            AccountMismatchNote(profile: profile)
             ShellCoverageNote()
             let elsewhere = model.sessionsOnOtherProfiles
             if !elsewhere.isEmpty {
@@ -95,6 +98,7 @@ struct AccountCard: View {
                 }
             }
             SignInLine(profile: profile)
+            AccountMismatchNote(profile: profile, compact: true)
             AvailabilityBadge(availability: model.availability(profile), formatting: formatting)
 
             VStack(alignment: .leading, spacing: Space.sm) {
@@ -121,6 +125,8 @@ struct AccountCard: View {
                 }
                 .disabled(model.binary == nil)
                 .help("Open Terminal with \(profile.name)")
+                CheckUsageButton(profile: profile) { error = $0 }
+                    .buttonStyle(.borderless)
                 Spacer()
                 Button {
                     model.route = .profile(profile.id)
@@ -182,6 +188,42 @@ struct SignInLine: View {
         .font(.meta)
         .foregroundStyle(.secondary)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Shown when another profile names the same account but its usage resets at different times,
+/// so one of the two saved sign-ins is out of date (see `AccountMismatch`).
+struct AccountMismatchNote: View {
+    @Environment(AppModel.self) private var model
+    let profile: Profile
+    /// Narrow cards: a short line with the button below; the full text is in the tooltip.
+    var compact = false
+
+    var body: some View {
+        let others = model.accountMismatches(for: profile)
+        if !others.isEmpty {
+            let names = others.map(\.name).joined(separator: ", ")
+            let email = model.authStore.status(for: profile.id)?.email.map { " (\($0))" } ?? ""
+            let text = "Shows the same account as \(names)\(email), but usage resets at different times, so they are different accounts. One saved sign-in is out of date. Sign in again to refresh it."
+            if compact {
+                VStack(alignment: .leading, spacing: Space.xxs) {
+                    Label("Same account as \(names), but usage resets differ. A saved sign-in is out of date.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.meta)
+                        .foregroundStyle(Color.statusWarn)
+                        .fixedSize(horizontal: false, vertical: true)
+                    signInButton
+                }
+                .help(text)
+            } else {
+                InlineMessage(kind: .warning, text: text) { signInButton }
+            }
+        }
+    }
+
+    private var signInButton: some View {
+        Button("Sign In Again…") { model.signInRequest = profile }
+            .controlSize(.small)
+            .disabled(model.binary == nil)
     }
 }
 

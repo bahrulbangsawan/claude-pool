@@ -22,6 +22,45 @@ struct PlanBadge: View {
     }
 }
 
+/// "Check usage now" (see `UsageProbe`): an icon for rows and small cards, a labelled button
+/// elsewhere. Hidden when the profile can't report usage; a spinner while the check runs.
+struct CheckUsageButton: View {
+    @Environment(AppModel.self) private var model
+    let profile: Profile
+    var labelled = false
+    /// Called with the error message, or nil after a successful check.
+    let onResult: (String?) -> Void
+
+    var body: some View {
+        if model.canCheckUsage(profile) {
+            if model.checkingUsage.contains(profile.id) {
+                HStack(spacing: Space.xxs) {
+                    ProgressView().controlSize(.small)
+                    if labelled { Text("Checking…").font(.meta).foregroundStyle(.secondary) }
+                }
+                .frame(minWidth: 28, minHeight: 28)
+                .help("Checking \(profile.name)'s usage…")
+            } else {
+                Button {
+                    Task {
+                        do { try await model.checkUsageNow(profile); onResult(nil) } catch { onResult(error.localizedDescription) }
+                    }
+                } label: {
+                    if labelled {
+                        Label("Check Usage Now", systemImage: "arrow.clockwise")
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                }
+                .help("Check \(profile.name)'s usage now. Claude Code sends one tiny Haiku request as this account and reports its current usage.")
+                .accessibilityLabel("Check usage now for \(profile.name)")
+            }
+        }
+    }
+}
+
 /// "Usable", "5-hour limit reached · resets 14:05 (in 2h)", from reported windows only.
 struct AvailabilityBadge: View {
     let availability: AccountAvailability

@@ -80,6 +80,14 @@ import Testing
         }
     }
 
+    @Test func herdrScriptQuotesPathsAndKeepsAShell() {
+        let script = TerminalLauncher.herdrScript(herdrPath: "/Users/x/my 'bin'/herdr", workingDirectory: "/tmp/a b")
+        #expect(script.hasPrefix("#!/bin/zsh\n"))
+        #expect(script.contains("\ncd '/tmp/a b' 2>/dev/null || cd \"$HOME\"\n"))
+        #expect(script.contains("\n'/Users/x/my '\\''bin'\\''/herdr'\n"))
+        #expect(script.hasSuffix("exec /bin/zsh -il\n"))
+    }
+
     @Test func cleanupRemovesOnlyOldScripts() throws {
         let temp = try TempDirectory()
         let launcher = TerminalLauncher(paths: temp.paths)

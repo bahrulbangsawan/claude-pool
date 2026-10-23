@@ -27,16 +27,30 @@ struct SettingsView: View {
             binaryCard
 
             Card(title: "Terminal") {
-                SettingRow(title: "Working directory", detail: "New Terminal windows start here, then run claude with the profile.") {
-                    HStack(spacing: Space.xs) {
-                        TextField("Working directory", text: $settingsStore.settings.defaultWorkingDirectory)
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                            .font(.body.monospaced())
-                            .frame(width: 200)
-                        Button("Choose…") {
-                            if let url = Panels.chooseDirectory(startingAt: model.paths.expandTilde(model.settings.defaultWorkingDirectory)) {
-                                model.settings.defaultWorkingDirectory = model.paths.abbreviate(url.path)
+                VStack(spacing: Space.xs) {
+                    SettingRow(title: "Open in", detail: model.settings.terminalHost == .herdr
+                               ? "Open Terminal adds a tab to the running herdr session and brings its window forward."
+                               : "Open Terminal opens a new Terminal window.") {
+                        Picker("Open in", selection: $settingsStore.settings.terminalHost) {
+                            Text("Terminal").tag(TerminalHost.terminal)
+                            Text("herdr").tag(TerminalHost.herdr)
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                    }
+                    if model.settings.terminalHost == .herdr { herdrStatus }
+                    Divider()
+                    SettingRow(title: "Working directory", detail: "New Terminal windows and herdr tabs start here, then run claude with the profile.") {
+                        HStack(spacing: Space.xs) {
+                            TextField("Working directory", text: $settingsStore.settings.defaultWorkingDirectory)
+                                .labelsHidden()
+                                .textFieldStyle(.roundedBorder)
+                                .font(.body.monospaced())
+                                .frame(width: 200)
+                            Button("Choose…") {
+                                if let url = Panels.chooseDirectory(startingAt: model.paths.expandTilde(model.settings.defaultWorkingDirectory)) {
+                                    model.settings.defaultWorkingDirectory = model.paths.abbreviate(url.path)
+                                }
                             }
                         }
                     }
@@ -281,6 +295,30 @@ struct SettingsView: View {
             }
         case .unavailable:
             InlineMessage(kind: .info, text: "Notifications need Claude Pool to run as an app (build/ClaudePool.app).")
+        }
+    }
+
+    /// Precheck for Open in › herdr: where herdr is, or a way to install it.
+    @ViewBuilder
+    private var herdrStatus: some View {
+        if model.isInstallingHerdr {
+            HStack(spacing: Space.xs) {
+                ProgressView().controlSize(.small)
+                Text("Installing herdr…").font(.meta).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if let binary = model.launcher.herdr.binary {
+            Label("herdr is installed at \(model.paths.abbreviate(binary.path)). When it isn't running, Open Terminal starts it in Terminal first.", systemImage: "checkmark.circle.fill")
+                .font(.meta)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            InlineMessage(kind: .warning, text: "herdr isn't installed. Install runs herdr's official installer from herdr.dev, which checks the download and puts herdr in ~/.local/bin.") {
+                Button("Install herdr") { Task { await model.installHerdr() } }.controlSize(.small)
+            }
+        }
+        if let error = model.herdrInstallError {
+            InlineMessage(kind: .error, text: error) { model.herdrInstallError = nil }
         }
     }
 

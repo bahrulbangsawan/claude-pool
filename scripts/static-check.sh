@@ -22,7 +22,7 @@ done
 
 # Narrow decoders: files Claude Pool reads from Claude Code are decoded through structs that
 # declare only the fields it needs. None of them may ever declare content or secret fields.
-decoders="Sources/Services/UsageIndex.swift Sources/Models/AccountDetails.swift Sources/Services/SessionRegistryService.swift Collector/StatuslinePayload.swift Collector/RateLimitInput.swift"
+decoders="Sources/Services/UsageIndex.swift Sources/Models/AccountDetails.swift Sources/Services/SessionRegistryService.swift Sources/Services/UsageProbe.swift Collector/StatuslinePayload.swift Collector/RateLimitInput.swift"
 hits=$(grep -nE '^\s*(let|var) (content|text|prompt|message_content|accessToken|access_token|refreshToken|refresh_token|primaryApiKey|apiKey|messagingSocketPath|transcript_path|thinking|tool_use|input_json)\b' $decoders)
 if [ -n "$hits" ]; then
     echo "FORBIDDEN: content or secret field declared in a narrow decoder"

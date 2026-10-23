@@ -11,13 +11,15 @@ enum TerminalLauncherError: Error, LocalizedError {
     }
 }
 
-/// Opens Terminal.app running `claude` for a profile. Uses a `.command` file opened through
-/// NSWorkspace, so no Apple Events permission is needed.
+/// Opens Terminal.app, or a herdr tab, running `claude` for a profile. Terminal gets a `.command`
+/// file opened through NSWorkspace, so no Apple Events permission is needed; herdr runs the same
+/// file in a new tab through its CLI.
 struct TerminalLauncher: Sendable {
     static let terminalBundleID = "com.apple.Terminal"
     static let scriptLifetime: TimeInterval = 24 * 60 * 60
 
     let paths: Paths
+    var herdr: HerdrClient { HerdrClient(home: paths.userHome) }
 
     /// The launcher script. Every interpolated value goes through `ShellQuote`.
     static func script(profileName: String, configDir: String?, workingDirectory: String, claudePath: String, arguments: [String] = []) -> String {
@@ -48,9 +50,44 @@ struct TerminalLauncher: Sendable {
         return url
     }
 
+    /// Starts herdr in Terminal; its first client also starts the herdr server.
+    static func herdrScript(herdrPath: String, workingDirectory: String) -> String {
+        """
+        #!/bin/zsh
+        cd \(ShellQuote.quote(workingDirectory)) 2>/dev/null || cd "$HOME"
+        \(ShellQuote.quote(herdrPath))
+        exec /bin/zsh -il
+
+        """
+    }
+
+    func writeHerdrScript(herdrPath: String, workingDirectory: String) throws -> URL {
+        try AtomicFile.ensureDirectory(paths.caches, permissions: 0o700)
+        let url = paths.caches.appendingPathComponent("launch-herdr-\(UUID().uuidString).command")
+        let text = Self.herdrScript(herdrPath: herdrPath, workingDirectory: paths.expandTilde(workingDirectory))
+        try AtomicFile.write(Data(text.utf8), to: url, permissions: 0o700)
+        return url
+    }
+
     @MainActor
-    func launch(_ profile: Profile, workingDirectory: String, claudePath: String, arguments: [String] = []) async throws {
+    func launch(_ profile: Profile, workingDirectory: String, claudePath: String, arguments: [String] = [], in host: TerminalHost = .terminal) async throws {
         let script = try writeScript(for: profile, workingDirectory: workingDirectory, claudePath: claudePath, arguments: arguments)
+        guard host == .herdr else { return try await openInTerminal(script) }
+        let herdr = herdr
+        guard let binary = herdr.binary else { throw HerdrError.notInstalled }
+        let directory = paths.expandTilde(workingDirectory)
+        do {
+            try await herdr.openTab(running: script, label: profile.name, workingDirectory: directory)
+        } catch HerdrError.notRunning {
+            try await openInTerminal(try writeHerdrScript(herdrPath: binary.path, workingDirectory: workingDirectory))
+            guard await herdr.waitForServer() else { throw HerdrError.startTimedOut }
+            try await herdr.openTab(running: script, label: profile.name, workingDirectory: directory)
+        }
+        HerdrClient.hostApplication()?.activate()
+    }
+
+    @MainActor
+    private func openInTerminal(_ script: URL) async throws {
         guard let terminal = NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.terminalBundleID) else {
             throw TerminalLauncherError.terminalMissing
         }

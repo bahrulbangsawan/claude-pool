@@ -1,8 +1,9 @@
 import Charts
 import SwiftUI
 
-/// Observed history. Points sit only where Claude Code reported a value; line segments never
-/// cross a reset, so nothing is implied between windows. Hover snaps to the nearest observation.
+/// Observed history, one continuous line per window. Each reported value holds until the next
+/// observation (a step), and drops to 0 at a reset that has passed; nothing between observations is
+/// estimated. Hover snaps to the nearest observation.
 struct UsageHistoryChart: View {
     enum Range: String, CaseIterable, Identifiable {
         case day = "24 Hours"
@@ -17,7 +18,8 @@ struct UsageHistoryChart: View {
         let date: Date
         let value: Double
         let window: UsageWindowKind
-        let segment: String
+        /// False for the points added at a reset (the held value, then 0).
+        let observed: Bool
     }
 
     static let seriesColors: [UsageWindowKind: Color] = [.fiveHour: .accentColor, .sevenDay: .purple]
@@ -35,10 +37,10 @@ struct UsageHistoryChart: View {
         // Depends on the snapshot so the chart refreshes when the collector writes.
         let _ = model.usageStore.snapshot(for: profileID)
         let entries = model.usageStore.history(for: profileID, since: start)
-        let points = Self.points(from: entries)
+        let points = Self.points(from: entries, now: now)
         let resets = Self.resets(from: entries, in: start...now)
 
-        Card(title: "History", subtitle: "Observed values only · hover for details") {
+        Card(title: "History", subtitle: "Each reported value holds until the next · hover for details") {
             Picker("Range", selection: $range) {
                 ForEach(Range.allCases) { Text($0.rawValue).tag($0) }
             }
@@ -75,11 +77,12 @@ struct UsageHistoryChart: View {
                 LineMark(
                     x: .value("Time", point.date),
                     y: .value("Used", point.value),
-                    series: .value("Segment", point.segment)
+                    series: .value("Window", point.window.title)
                 )
+                .interpolationMethod(.stepEnd)
                 .foregroundStyle(Self.seriesColors[point.window] ?? .accentColor)
                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                .accessibilityLabel("\(point.window.title), \(point.date.formatted(date: .abbreviated, time: .shortened))")
+                .accessibilityLabel("\(point.window.title), \(point.observed ? "" : "reset, ")\(point.date.formatted(date: .abbreviated, time: .shortened))")
                 .accessibilityValue("\(UsageFormatting.percent(point.value)) percent")
             }
             if let hovered {
@@ -172,14 +175,32 @@ struct UsageHistoryChart: View {
 
     // MARK: Data
 
-    static func points(from entries: [UsageHistoryEntry]) -> [Point] {
+    /// Reset times closer than this are the same window (as in the collector).
+    static let sameWindowTolerance: TimeInterval = 60
+
+    /// For each window, the observations in order. When a window's reset has passed before the next
+    /// observation (or before `now`), its last value is held to the reset, then drops to 0 there.
+    static func points(from entries: [UsageHistoryEntry], now: Date) -> [Point] {
         var points: [Point] = []
-        for entry in entries {
-            if let value = entry.fh, let reset = entry.fhr {
-                points.append(Point(id: "5h-\(entry.t)", date: entry.date, value: value, window: .fiveHour, segment: "5h-\(reset)"))
+        for kind in UsageWindowKind.allCases {
+            func add(_ time: TimeInterval, _ value: Double, observed: Bool) {
+                points.append(Point(id: "\(kind.rawValue)-\(points.count)", date: Date(timeIntervalSince1970: time),
+                                    value: value, window: kind, observed: observed))
             }
-            if let value = entry.sd, let reset = entry.sdr {
-                points.append(Point(id: "7d-\(entry.t)", date: entry.date, value: value, window: .sevenDay, segment: "7d-\(reset)"))
+            var last: (value: Double, reset: TimeInterval)?
+            for entry in entries {
+                guard let value = kind == .fiveHour ? entry.fh : entry.sd,
+                      let reset = kind == .fiveHour ? entry.fhr : entry.sdr else { continue }
+                if let previous = last, abs(previous.reset - reset) >= sameWindowTolerance, previous.reset <= entry.t {
+                    add(previous.reset, previous.value, observed: false)
+                    add(previous.reset, 0, observed: false)
+                }
+                add(entry.t, value, observed: true)
+                last = (value, reset)
+            }
+            if let previous = last, previous.reset <= now.timeIntervalSince1970 {
+                add(previous.reset, previous.value, observed: false)
+                add(previous.reset, 0, observed: false)
             }
         }
         return points

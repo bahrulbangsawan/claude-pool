@@ -146,6 +146,7 @@ final class UsageStore {
     func removeData(for id: UUID) {
         try? FileManager.default.removeItem(at: pool.snapshot(for: id))
         try? FileManager.default.removeItem(at: pool.history(for: id))
+        try? FileManager.default.removeItem(at: pool.reporters(for: id))
         snapshots[id] = nil
     }
 }

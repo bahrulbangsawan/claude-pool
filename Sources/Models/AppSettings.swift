@@ -1,9 +1,18 @@
 import Foundation
 
+/// Where Open Terminal (and a session handoff) starts `claude`.
+enum TerminalHost: String, Codable, Hashable, Sendable, CaseIterable {
+    /// A new Terminal.app window.
+    case terminal
+    /// A new tab in the running herdr session (herdr.dev).
+    case herdr
+}
+
 /// App preferences, stored at `~/Library/Application Support/ClaudePool/settings.json`.
 struct AppSettings: Codable, Hashable, Sendable {
     var claudePathOverride: String?
     var defaultWorkingDirectory: String = "~"
+    var terminalHost: TerminalHost = .terminal
     var showNameInMenuBar: Bool = true
     /// Active profile's 5-hour and 7-day usage, as "5h:23% · 7d:41%".
     var showActiveUsageInMenuBar: Bool = true
@@ -27,6 +36,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         let defaults = AppSettings()
         claudePathOverride = try c.decodeIfPresent(String.self, forKey: .claudePathOverride)
         defaultWorkingDirectory = try c.decodeIfPresent(String.self, forKey: .defaultWorkingDirectory) ?? defaults.defaultWorkingDirectory
+        terminalHost = try c.decodeIfPresent(TerminalHost.self, forKey: .terminalHost) ?? defaults.terminalHost
         showNameInMenuBar = try c.decodeIfPresent(Bool.self, forKey: .showNameInMenuBar) ?? defaults.showNameInMenuBar
         showActiveUsageInMenuBar = try c.decodeIfPresent(Bool.self, forKey: .showActiveUsageInMenuBar) ?? defaults.showActiveUsageInMenuBar
         showSystemStatsInMenuBar = try c.decodeIfPresent(Bool.self, forKey: .showSystemStatsInMenuBar) ?? defaults.showSystemStatsInMenuBar

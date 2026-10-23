@@ -16,12 +16,10 @@ import Testing
     }
 
     @discardableResult
-    private func run(_ input: Data, arguments: [String]? = nil) throws -> ProcessOutput {
-        try runProcess(
-            binary, arguments ?? ["--profile", profileID.uuidString],
-            environment: [PoolPaths.homeOverrideVariable: pool.home.path, "PATH": "/usr/bin:/bin", "HOME": temp.url.path],
-            stdin: input
-        )
+    private func run(_ input: Data, arguments: [String]? = nil, configDir: String? = nil) throws -> ProcessOutput {
+        var environment = [PoolPaths.homeOverrideVariable: pool.home.path, "PATH": "/usr/bin:/bin", "HOME": temp.url.path]
+        environment["CLAUDE_CONFIG_DIR"] = configDir
+        return try runProcess(binary, arguments ?? ["--profile", profileID.uuidString], environment: environment, stdin: input)
     }
 
     private func snapshot() throws -> UsageSnapshot {
@@ -114,6 +112,168 @@ import Testing
 
         try run(sevenDay(2, resetsAt: reset + 7 * 86_400))
         #expect(try snapshot().sevenDay?.usedPercentage == 2, "a later window replaces the stored one")
+    }
+
+    /// The server can lower a window's usage (seen live: 100% → 77% with the same reset). Claude Code
+    /// adds `rate_limits` only after a session's first API response, so after a gap with no collector
+    /// runs every report comes from a session that started since, and a lower value is current.
+    @Test func lowerValueAfterAGapReplacesTheStoredOne() throws {
+        let reset = Date().addingTimeInterval(3 * 86_400).timeIntervalSince1970.rounded()
+        let lastSeen = Date().addingTimeInterval(-22 * 3600)
+        let stored = UsageSnapshot(profileId: profileID, observedAt: lastSeen, lastSeenAt: lastSeen,
+                                   sevenDay: UsageWindow(usedPercentage: 100, resetsAt: Date(timeIntervalSince1970: reset)))
+        try FileManager.default.createDirectory(at: pool.usageDirectory, withIntermediateDirectories: true)
+        try UsageCoding.makeEncoder().encode(stored).write(to: pool.snapshot(for: profileID))
+
+        func sevenDay(_ used: Int) -> Data {
+            Data(#"{"rate_limits":{"seven_day":{"used_percentage":\#(used),"resets_at":\#(Int(reset))}}}"#.utf8)
+        }
+        try run(sevenDay(77))
+        #expect(try snapshot().sevenDay?.usedPercentage == 77)
+        #expect(try snapshot().observedAt.map { $0 > lastSeen } == true)
+
+        // Once sessions are reporting again, a lower value is an idle session's old report.
+        try run(sevenDay(40))
+        #expect(try snapshot().sevenDay?.usedPercentage == 77)
+    }
+
+    // MARK: Concurrent sessions
+
+    private var fiveHourReset: Int { Int(Date().addingTimeInterval(2 * 3600).timeIntervalSince1970 / 600) * 600 }
+    private var weekReset: Int { Int(Date().addingTimeInterval(3 * 86_400).timeIntervalSince1970 / 3600) * 3600 }
+
+    /// A status line payload from one session (the ID is only an example value).
+    private func report(_ session: String, fh: Int? = nil, sd: Int? = nil) -> Data {
+        var windows: [String] = []
+        if let fh { windows.append(#""five_hour":{"used_percentage":\#(fh),"resets_at":\#(fiveHourReset)}"#) }
+        if let sd { windows.append(#""seven_day":{"used_percentage":\#(sd),"resets_at":\#(weekReset)}"#) }
+        return Data(#"{"session_id":"\#(session)","rate_limits":{\#(windows.joined(separator: ","))}}"#.utf8)
+    }
+
+    /// Skips the warm-up after an update, as if the collector had been tracking sessions for a while.
+    private func pastWarmUp() throws {
+        try FileManager.default.createDirectory(at: pool.usageDirectory, withIntermediateDirectories: true)
+        let since = Int(Date().addingTimeInterval(-3600).timeIntervalSince1970)
+        try Data(#"{"schema":1,"since":\#(since),"reporters":[]}"#.utf8).write(to: pool.reporters(for: profileID))
+    }
+
+    @Test func activeSessionCanLowerAValueAnIdleSessionKeepsRepeating() throws {
+        try pastWarmUp()
+        try run(report("idle", sd: 100))
+        try run(report("active", sd: 100))
+        try run(report("active", sd: 77))
+        let lowered = try snapshot()
+        #expect(lowered.sevenDay?.usedPercentage == 77, "the server lowered the weekly value (seen live: 100% → 77%)")
+
+        try run(report("idle", sd: 100))
+        #expect(try snapshot().sevenDay?.usedPercentage == 77, "the idle session only repeats its last API response")
+        #expect(try snapshot().observedAt == lowered.observedAt, "a repeated old report is not a new observation")
+    }
+
+    @Test func newSessionReportsCurrentUsage() throws {
+        // Claude Code adds rate_limits only after a session's first API response.
+        try pastWarmUp()
+        try run(report("old", sd: 100))
+        try run(report("new", sd: 77))
+        #expect(try snapshot().sevenDay?.usedPercentage == 77)
+    }
+
+    @Test func droppedWindowDoesNotMakeASessionCurrent() throws {
+        try pastWarmUp()
+        try run(report("idle", fh: 50, sd: 100))
+        try run(report("active", sd: 77))
+        // The idle session's 5-hour window reset, so Claude Code stopped sending it.
+        try run(report("idle", sd: 100))
+        #expect(try snapshot().sevenDay?.usedPercentage == 77)
+    }
+
+    @Test func concurrentSessionsDoNotFloodHistory() throws {
+        try pastWarmUp()
+        try run(report("idle", fh: 9, sd: 29))
+        try run(report("active", fh: 10, sd: 30))
+        for _ in 0..<5 {
+            try run(report("idle", fh: 9, sd: 29))
+            try run(report("active", fh: 10, sd: 30))
+        }
+        #expect(historyLines().count == 2, "repeated reports add nothing within five minutes")
+
+        try run(report("active", fh: 11, sd: 30))
+        try run(report("idle", fh: 9, sd: 29))
+        #expect(historyLines().count == 3)
+        let last = try JSONDecoder().decode(UsageHistoryEntry.self, from: Data(historyLines()[2].utf8))
+        #expect(last.fh == 11 && last.sd == 30, "each entry holds both current windows")
+        #expect(try snapshot().fiveHour?.usedPercentage == 11)
+    }
+
+    @Test func warmUpKeepsTheHighestValueFromSessionsAlreadyOpen() throws {
+        // First runs after an update: every open session is new to the collector, idle ones included.
+        try run(report("a", sd: 100))
+        try run(report("b", sd: 77))
+        #expect(try snapshot().sevenDay?.usedPercentage == 100)
+    }
+
+    @Test func sessionIDIsStoredOnlyAsAHash() throws {
+        try run(Fixtures.data("statusline-full.json"))
+        let text = try #require(readText(pool.reporters(for: profileID)))
+        #expect(!text.contains("4f4ea72c"))
+        #expect(text.range(of: #""k":"[0-9a-f]{16}""#, options: .regularExpression) != nil)
+        #expect(permissions(of: pool.reporters(for: profileID)) == 0o600)
+    }
+
+    // MARK: Routing by config directory
+
+    /// `profileID` is the Default profile here; `other` owns the `other` config directory.
+    private func writeProfileDirectories(other: UUID) throws -> URL {
+        let otherDir = temp.file("other")
+        try FileManager.default.createDirectory(at: otherDir, withIntermediateDirectories: true)
+        let map = ProfileDirectories(defaultProfile: profileID, directories: [
+            ProfileDirectories.canonical(temp.file("default").path): profileID,
+            ProfileDirectories.canonical(otherDir.path): other,
+        ])
+        try FileManager.default.createDirectory(at: pool.home, withIntermediateDirectories: true)
+        try UsageCoding.makeEncoder().encode(map).write(to: pool.profileDirectories)
+        return otherDir
+    }
+
+    private func snapshot(for id: UUID) -> UsageSnapshot? {
+        (try? Data(contentsOf: pool.snapshot(for: id))).flatMap { try? UsageCoding.makeDecoder().decode(UsageSnapshot.self, from: $0) }
+    }
+
+    @Test func reportGoesToTheProfileThatOwnsTheSessionsConfigDir() throws {
+        // A session of another profile started in the home folder loads ~/.claude/settings.json as
+        // project settings, so it runs the Default profile's status line command.
+        let other = UUID()
+        let otherDir = try writeProfileDirectories(other: other)
+        try run(report("s1", sd: 77), configDir: otherDir.path)
+        #expect(snapshot(for: other)?.sevenDay?.usedPercentage == 77)
+        #expect(snapshot(for: profileID) == nil)
+    }
+
+    @Test func sessionWithoutConfigDirBelongsToDefault() throws {
+        let other = UUID()
+        _ = try writeProfileDirectories(other: other)
+        try run(report("s1", sd: 40), arguments: ["--profile", other.uuidString])
+        #expect(snapshot(for: profileID)?.sevenDay?.usedPercentage == 40)
+        #expect(snapshot(for: other) == nil)
+    }
+
+    @Test func unknownConfigDirOrNoMapKeepsTheRequestedProfile() throws {
+        try run(report("s1", sd: 10), configDir: temp.file("other").path)
+        #expect(snapshot(for: profileID)?.sevenDay?.usedPercentage == 10, "no map yet")
+
+        _ = try writeProfileDirectories(other: UUID())
+        try run(report("s1", sd: 11), configDir: temp.file("not-a-profile").path)
+        #expect(snapshot(for: profileID)?.sevenDay?.usedPercentage == 11)
+    }
+
+    @Test func recordOnlyIsNeverRerouted() throws {
+        // Check Usage Now names the profile itself and runs without CLAUDE_CONFIG_DIR.
+        let other = UUID()
+        _ = try writeProfileDirectories(other: other)
+        let result = try run(report("s1", sd: 55), arguments: ["--profile", other.uuidString, "--record-only"])
+        #expect(result.stdout.isEmpty)
+        #expect(snapshot(for: other)?.sevenDay?.usedPercentage == 55)
+        #expect(snapshot(for: profileID) == nil)
     }
 
     @Test func runWithoutWindowsRecordsLastSeenOnly() throws {
@@ -236,7 +396,7 @@ import Testing
 
         let entry = try JSONDecoder().decode(UsageHistoryEntry.self, from: Data(historyLines()[1].utf8))
         #expect(entry.fh == 57 && entry.fhr == 1_791_003_600)
-        #expect(entry.sd == nil && entry.sdr == nil, "only windows present in that run are recorded")
+        #expect(entry.sd == nil && entry.sdr == nil, "a window that has already reset is not carried into later entries")
     }
 
     @Test func historyRepeatsAfterFiveMinutes() throws {

@@ -188,6 +188,9 @@ private struct MenuProfileRow: View {
             .help(isActive ? "\(profile.name) is active" : "Make \(profile.name) the active profile")
             .accessibilityHint("Sets \(profile.name) as the active profile for new claude launches")
 
+            CheckUsageButton(profile: profile) { launchError = $0 }
+                .buttonStyle(.borderless)
+
             Button {
                 Task {
                     do { try await model.openTerminal(profile) } catch { launchError = error.localizedDescription }

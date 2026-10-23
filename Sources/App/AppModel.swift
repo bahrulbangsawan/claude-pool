@@ -25,6 +25,10 @@ final class AppModel {
     private(set) var trackingStates: [UUID: TrackingState] = [:]
     private(set) var diagnostics: [DiagnosticCheck] = []
     private(set) var isRunningDiagnostics = false
+    private(set) var isInstallingHerdr = false
+    var herdrInstallError: String?
+    /// Profiles with a "Check usage now" request running.
+    private(set) var checkingUsage: Set<UUID> = []
     private(set) var diagnosticsRunAt: Date?
     var startupError: String?
     /// Last shared-extensions sync: when it ran, what it changed, or why it failed.
@@ -99,10 +103,14 @@ final class AppModel {
         started = true
         settingsStore.load()
         profileStore.load()
-        profileStore.onSave = { [weak self] in self?.syncSharedExtensions() }
+        profileStore.onSave = { [weak self] in
+            self?.syncSharedExtensions()
+            try? self?.writeProfileDirectories()
+        }
         syncSharedExtensions()
         do {
             try AtomicFile.ensureDirectory(paths.pool.home, permissions: 0o700)
+            try writeProfileDirectories()
             try installer.installIfNeeded()
             try installer.writeOutputMode(settings.collectorOutput)
         } catch {
@@ -279,8 +287,8 @@ final class AppModel {
     // MARK: Session handoff
 
     /// Continues a running conversation on another profile: re-checks the target's sign-in, copies
-    /// the conversation into the target profile, then opens Terminal with `claude --resume <id>`
-    /// in the session's folder. The original process is left alone.
+    /// the conversation into the target profile, then opens Terminal (or a herdr tab) with
+    /// `claude --resume <id>` in the session's folder. The original process is left alone.
     func handOff(_ session: ClaudeSession, to target: Profile) async throws {
         guard let binary = await resolvedBinary() else { throw AppModelError.binaryMissing }
         guard let source = profileStore.profile(id: session.profileID) else { throw ProfileValidationError.notFound }
@@ -294,7 +302,7 @@ final class AppModel {
         let plan = try handoffService.plan(session, from: source, to: target)
         let result = try handoffService.execute(plan)
         await analyticsStore.registerCopiedFiles(result.copiedFiles, profileID: target.id)
-        try await launcher.launch(target, workingDirectory: session.cwd, claudePath: binary.path, arguments: ["--resume", session.sessionID])
+        try await launcher.launch(target, workingDirectory: session.cwd, claudePath: binary.path, arguments: ["--resume", session.sessionID], in: settings.terminalHost)
         sessionStore.beginHandoff(session, to: target.id)
     }
 
@@ -322,9 +330,22 @@ final class AppModel {
 
     func openTerminal(_ profile: Profile, forSignIn: Bool = false) async throws {
         guard let binary else { throw AppModelError.binaryMissing }
-        try await launcher.launch(profile, workingDirectory: settings.defaultWorkingDirectory, claudePath: binary.path)
+        try await launcher.launch(profile, workingDirectory: settings.defaultWorkingDirectory, claudePath: binary.path, in: settings.terminalHost)
         if forSignIn {
             authStore.scheduleCheckAfterSignIn(profile) { [weak self] in self?.binary }
+        }
+    }
+
+    /// Installs herdr with its official installer, for Open in › herdr.
+    func installHerdr() async {
+        guard !isInstallingHerdr else { return }
+        isInstallingHerdr = true
+        defer { isInstallingHerdr = false }
+        do {
+            _ = try await launcher.herdr.install()
+            herdrInstallError = nil
+        } catch {
+            herdrInstallError = error.localizedDescription
         }
     }
 
@@ -472,6 +493,35 @@ final class AppModel {
         )
     }
 
+    /// "Check usage now" needs a tracked profile signed in with claude.ai (only those report usage).
+    func canCheckUsage(_ profile: Profile) -> Bool {
+        guard binary != nil, profile.trackingEnabled, let status = authStore.status(for: profile.id) else { return false }
+        return status.signedIn && status.reportsUsage
+    }
+
+    /// Has Claude Code send one tiny request as `profile` and stores the usage it reports, the same
+    /// way the collector stores a status line report. Costs a few hundred tokens of that account.
+    func checkUsageNow(_ profile: Profile) async throws {
+        guard !checkingUsage.contains(profile.id) else { return }
+        guard let binary = await resolvedBinary() else { throw AppModelError.binaryMissing }
+        checkingUsage.insert(profile.id)
+        defer { checkingUsage.remove(profile.id) }
+        let probe = UsageProbe(paths: paths)
+        let reading = try await probe.check(profile, binary: binary)
+        try installer.installIfNeeded()
+        try await probe.record(reading, for: profile, collector: URL(fileURLWithPath: collectorPath))
+        usageStore.reload()
+    }
+
+    /// Profiles whose saved sign-in names the same account as `profile`, while their usage resets
+    /// at different times: they are different accounts, so one saved sign-in is out of date.
+    func accountMismatches(for profile: Profile) -> [Profile] {
+        let mine = usageStore.snapshot(for: profile.id)
+        return authStore.duplicates(of: profile.id, among: profiles).filter {
+            AccountMismatch.windowsDisagree(mine, usageStore.snapshot(for: $0.id), now: usageStore.now)
+        }
+    }
+
     // MARK: Limit alerts and suggestion (opt-in, informational only)
 
     func advisorCandidate(_ profile: Profile) -> AccountAdvisor.Candidate {
@@ -591,6 +641,16 @@ final class AppModel {
     }
 
     // MARK: Shared extensions
+
+    /// Tells the collector which profile owns which config directory, so a session that runs another
+    /// profile's status line command is still counted for its own profile (see `ProfileDirectories`).
+    func writeProfileDirectories() throws {
+        let map = ProfileDirectories(
+            defaultProfile: profileStore.defaultProfile?.id,
+            directories: Dictionary(profiles.map { (ProfileDirectories.canonical($0.configDir), $0.id) }, uniquingKeysWith: { first, _ in first })
+        )
+        try AtomicFile.write(UsageCoding.makeEncoder().encode(map), to: paths.pool.profileDirectories, permissions: 0o600)
+    }
 
     /// Runs the shared-extensions sync off the main thread when the setting is on. A request while one
     /// is running queues exactly one more run.
