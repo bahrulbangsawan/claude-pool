@@ -215,7 +215,7 @@ struct SettingsView: View {
         Card(title: "Shared Extensions", subtitle: "Every profile gets the same MCP servers, skills, plugins, hooks and permission rules, so switching accounts never loses them.") {
             VStack(spacing: Space.xs) {
                 SettingRow(title: "Share across profiles",
-                           detail: "Install or remove an extension in any profile and every other profile follows, including profiles added later. Skills live in ~/.claude and are linked into the others. Sign-ins, the status line, theme and model stay per account. MCP servers that need a sign-in still ask once per account.") {
+                           detail: "Install or remove an extension in any profile and every other profile follows, including profiles added later. Skills live in ~/.claude and are linked into the others. Sign-ins, the status line, theme and model stay per account. MCP servers that need a sign-in still sign in once per account, from the MCP Servers page.") {
                     Toggle("Share across profiles", isOn: Binding(
                         get: { model.settings.shareExtensions },
                         set: { model.setShareExtensions($0) }

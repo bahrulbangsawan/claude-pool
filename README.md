@@ -36,6 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/bahrulbangsawan/claude-pool/main/in
   - [Usage tracking (opt-in)](#usage-tracking-opt-in)
   - [Limit alerts and suggestion (opt-in)](#limit-alerts-and-suggestion-opt-in)
   - [Shared extensions](#shared-extensions)
+  - [MCP servers and sign-ins](#mcp-servers-and-sign-ins)
   - [Diagnostics](#diagnostics)
   - [Settings](#settings)
 - [Install](#install)
@@ -129,6 +130,20 @@ Both are off by default (Settings › Limit Alerts). **Notify near and at a limi
 ### Shared extensions
 
 Each profile is a separate Claude Code config directory, so by default an MCP server, skill or plugin installed under one account doesn't exist in the others. **Settings › Shared Extensions** (on by default) keeps them the same everywhere: MCP servers (user scope), skills, agents, commands, output styles, `CLAUDE.md`, enabled plugins and marketplaces, hooks and permission rules. Install or remove one in any profile and every profile follows, including profiles you add later. Sign-ins, the status line, theme and model stay per account. Details: [Shared extensions](#shared-extensions-1).
+
+### MCP servers and sign-ins
+
+<p align="center"><img src="docs/screenshots/mcp.png" width="880" alt="MCP Servers page: every server with its sign-in state in each profile"></p>
+
+Each profile keeps its own MCP sign-ins, so a server such as Cloudflare or Neon has to be signed in once in every account. The **MCP Servers** page shows every server of every profile in one grid (yours, plugins' and claude.ai connectors) with each profile's state: connected, needs sign-in, or can't connect.
+
+- **Sign in without opening a session.** Click a key, a row's **Sign In (n)…**, or **Sign In to All…**: Claude Pool runs Claude Code's own `claude mcp login` for one profile after another. **Open in Browser** and approve, and it finishes on its own; or **Copy Link**, open it anywhere, and paste back the address the browser ends on. The browser stays signed in to the service, so every further profile is one more approval.
+- **Add Server…** offers Cloudflare, AWS (with its region), Neon, Polar and Polar Sandbox, Mobbin, Meta Developer Tools, WhatsApp Business, Linear, Notion and Sentry, or any remote address. It runs `claude mcp add --scope user` in every profile (or the ones you pick while Shared Extensions is off) and can go straight on to the sign-ins.
+- **Sign Out** and **Remove**, with a confirmation, and **Check Again**. Each profile's page shows how many of its servers are connected or waiting for a sign-in.
+
+<p align="center"><img src="docs/screenshots/sheet-mcp-signin.png" width="560" alt="MCP sign-in sheet going through three profiles, waiting for the first approval"></p>
+
+Details: [MCP sign-in](#mcp-sign-in).
 
 ### Diagnostics
 
@@ -273,8 +288,17 @@ Settings › Shared Extensions, on by default. The sync runs at launch, on every
 
 - **Default is the primary copy.** Entries of `skills/`, `agents/`, `commands/` and `output-styles/` and the file `CLAUDE.md` live in `~/.claude`; every other profile gets a symlink per entry. A real entry created in another profile (for example a skill installed while that account was active) is moved into `~/.claude` and linked back. A local entry with the same name as a primary one is left alone. Broken links in `~/.claude` are not copied. `synced/` (skills and plugins claude.ai syncs for an organisation) stays per account.
 - **Keyed entries are merged three ways.** `mcpServers` in each profile's global config, and `enabledPlugins`, `extraKnownMarketplaces`, `hooks` and `permissions.allow/deny/ask` in `settings.json`. Plugins are shared as intent: Claude Code installs each enabled plugin into the profile's own `plugins/` folder, so install records and caches are not synced. An entry added in any profile is copied to all; on a name conflict the Default profile's value wins. Removing an entry from a profile that held it at the previous sync removes it everywhere. An entry the sync just wrote only counts as held once a later run sees it on disk, so a running session that writes an older copy can't be mistaken for a removal.
-- **Not shared.** Sign-in (Keychain), `oauthAccount`, `statusLine`, theme, model, `autoMode` and every other key. MCP servers that use OAuth keep their sign-in per account, so `/mcp` asks once in each profile.
+- **Not shared.** Sign-in (Keychain), `oauthAccount`, `statusLine`, theme, model, `autoMode` and every other key. MCP servers that use OAuth keep their sign-in per account, so each profile signs in once; the [MCP Servers](#mcp-servers-and-sign-ins) page does that without opening a session.
 - Every changed file is backed up first to `~/.claude-pool/backups/shared-sync/<time>/`; the last 10 runs are kept. A file that isn't valid JSON is never rewritten.
+
+### MCP sign-in
+
+The MCP Servers page asks Claude Code itself; it never reads `.claude.json` for this or touches a token.
+
+- **State.** `claude mcp list` for each profile (`CLAUDE_CONFIG_DIR` set, PATH from your login shell so servers started through `npx` or `uvx` are checked as in Terminal), three profiles at a time. The page checks when it opens, at most every 10 minutes, and on **Check Again**: a check starts every stdio server and contacts every remote one, so it never runs in the background. After a sign-in, add or sign-out only that server is re-read with `claude mcp get`. Only the name, a display address (a URL without its query, a command without its arguments) and the state are kept, in memory.
+- **Sign-in.** The unmodified `claude mcp login <name> --no-browser` on a pseudo-terminal (its paste prompt only exists on a terminal). Verified behaviour of Claude Code 2.1.309: it prints the provider's authorization URL, listens on `localhost` for the provider's redirect, and shows "Or paste the redirect URL here". Opened on this Mac, the browser lands on that callback and the sign-in completes; from another device, the browser ends on an unreachable `http://localhost:<port>/callback?code=…` page, and pasting that address finishes the same sign-in. The pasted address is written to the terminal and cleared; an address from another sign-in is refused by Claude Code and the sheet keeps waiting. Success (`Authenticated with "<name>"`, exit 0) is confirmed with `claude mcp get`. A claude.ai connector prints a claude.ai link instead, which finishes on claude.ai for that profile's account.
+- **Several profiles.** One sign-in runs at a time (they share the localhost callback port); a successful one moves on by itself, **Skip** leaves a profile for later. **Sign In to All** and the sidebar badge leave out claude.ai connectors, which an organisation can offer by the dozen; their own rows still sign them in.
+- **Add and remove.** `claude mcp add --transport http|sse --scope user <name> <url>` and `claude mcp remove <name>`, in every profile while Shared Extensions is on (so the sync agrees), otherwise in the profiles you choose. A server that is already there, or already gone, is not an error. Signing out is `claude mcp logout <name>`.
 
 ### CPU and memory
 
@@ -378,11 +402,12 @@ Values are whole percentages. The bar uses the accent colour below 70%, orange f
 5. Per-response `usage` from conversation files (see *Usage analytics*). Content is never decoded or stored.
 6. The output of the unmodified `claude auth login` (the authorization URL and success/failure text), never stored or logged.
 7. With Shared extensions on: the extension entries listed under *Shared extensions*, read and written as opaque JSON values. Other keys are carried over unchanged and never inspected.
+8. The output of the unmodified `claude mcp list`, `get`, `login`, `add`, `remove` and `logout`: server names, a display address (no query string, no command arguments), the state and success/failure text, in memory only. The address pasted during an MCP sign-in goes to Claude Code's terminal and is not kept.
 
 **Never:**
 
-- reads, parses, copies, displays, exports or logs any credential, token, credentials file, or Keychain item. The Security framework is not imported, and no `SecItem*` API is used. Sign-in codes are passed to Claude Code's stdin and discarded.
-- makes any network access: no `URLSession`, Network framework, sockets or telemetry; no calls to any Anthropic endpoint; no scraping, interception or proxying. (`claude auth login` and `auth status` are Claude Code itself.)
+- reads, parses, copies, displays, exports or logs any credential, token, credentials file, or Keychain item. The Security framework is not imported, and no `SecItem*` API is used. Sign-in codes are passed to Claude Code's stdin, and MCP redirect addresses to its terminal, then discarded.
+- makes any network access: no `URLSession`, Network framework, sockets or telemetry; no calls to any Anthropic endpoint; no scraping, interception or proxying. (`claude auth login`, `auth status` and the `claude mcp` commands are Claude Code itself.)
 - reads prompts, responses or tool output. Conversation files are only scanned for usage numbers, or copied byte-for-byte during a handoff you confirm.
 - uses or generates OAuth-token environment variables or long-lived tokens.
 - switches automatically (by usage, limits, errors, timers or heuristics), rotates or load-balances accounts, moves conversations without your confirmation, re-sends requests, or forecasts usage. The opt-in limit alerts and suggestion (see *Limit alerts and suggestion*) only inform you; they are off by default, and every switch is your click.
@@ -440,12 +465,13 @@ Sandbox entitlements cannot express "a user-chosen dotfile in `$HOME`, persisten
 - **Reset times in the past.** Claude Code can keep sending a window whose `resets_at` has already passed (seen with the 7-day window). The app shows "Window reset at … · no newer data" rather than the outdated percentage.
 - **Credential precedence.** An exported `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, OAuth-token variable, or an `apiKeyHelper` overrides `/login`. If one is exported globally, every profile uses that credential. Diagnostics flag this by name.
 - Claude Console sign-ins made without an API key are stored outside the config directory and are not isolated per profile.
-- Terminal.app only. The `claude auth status` / `auth login` subprocesses are Claude Code itself; whatever they do on the network is Claude Code's behaviour, not the app's.
+- Terminal.app only. The `claude auth status` / `auth login` / `mcp` subprocesses are Claude Code itself; whatever they do on the network is Claude Code's behaviour, not the app's.
 - **Running sessions can't be switched live.** See the root cause above. A handoff starts a new process (the conversation and folder carry over; in-memory state such as a pending tool approval does not). The resumed session may ask to trust the folder again in the target profile.
 - **Usage windows need one response.** Claude Code reports them in the status line after a session's first API response; Claude Pool doesn't contact Anthropic, so a newly added account shows "No data yet" until then. Only percentages and reset times are reported — no absolute allowance.
 - **Plan tier** depends on Claude Code having cached the account profile; until it has, Max shows "Max · Unknown Tier".
 - **Analytics** cover only what Claude Code recorded on this Mac, attributed to the profile whose directory holds the conversation. If a profile was re-signed to another account, earlier usage stays with the profile. Conversations deleted before they were indexed can't be counted.
 - **In-app sign-in** relies on `claude auth login`'s non-interactive output (verified on 2.1.296). If a future version changes it, the sheet reports the failure and **Sign In with Terminal** still works. Console (API billing) and SSO sign-ins use Terminal.
+- **MCP sign-in** relies on `claude mcp login --no-browser` and the `claude mcp list` / `get` output (verified on 2.1.309). If a future version changes them, the sheet reports the failure and `/mcp` in a session still works. Each profile signs in to each server separately: the sign-ins are Claude Code's, kept per config directory, and Claude Pool never copies them. Checking a profile takes up to half a minute, since Claude Code health-checks every server.
 - **Status line** alignment and the flexible space need the terminal width (read from the controlling terminal); otherwise lines are left-aligned. Powerline glyphs need a Powerline/Nerd font.
 
 ## Troubleshooting (by Diagnostics check)

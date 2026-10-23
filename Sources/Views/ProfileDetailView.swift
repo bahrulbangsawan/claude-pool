@@ -30,6 +30,7 @@ struct ProfileDetailView: View {
             sessionsCard
             UsageHistoryChart(profileID: current.id)
             signInCard
+            mcpCard
             trackingCard
             profileCard
             removeCard
@@ -101,6 +102,63 @@ struct ProfileDetailView: View {
             Text("Source: Claude Code status line on this Mac. Values are as reported by Claude Code at the time shown.")
                 .font(.meta)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: MCP servers
+
+    private var mcpCard: some View {
+        let servers = model.mcpStore.servers[current.id]
+        let checked = model.mcpStore.checkedAt[current.id]
+        return Card(title: "MCP Servers", subtitle: checked.map { "Checked \(model.formatting.age(since: $0))" }) {
+            Button("Manage…") { model.route = .mcp }
+                .help("All MCP servers of every profile")
+        } content: {
+            if let servers {
+                let connected = servers.filter { $0.health == .connected }
+                let needing = servers.filter { $0.health == .needsSignIn && $0.supportsSignIn && $0.kind != .connector }
+                let connectors = servers.filter { $0.health == .needsSignIn && $0.kind == .connector }
+                let failing = servers.filter { if case .failed = $0.health { true } else { false } }
+                HStack(spacing: Space.xs) {
+                    StatusBadge(text: "\(connected.count) connected", systemImage: "checkmark.circle.fill", tint: .statusOK)
+                    if !needing.isEmpty {
+                        StatusBadge(text: "\(needing.count) need sign-in", systemImage: "key.fill", tint: .statusWarn)
+                    }
+                    if !failing.isEmpty {
+                        StatusBadge(text: "\(failing.count) can't connect", systemImage: "xmark.octagon.fill", tint: .statusFail)
+                    }
+                    Spacer()
+                    if !needing.isEmpty {
+                        Button(needing.count == 1 ? "Sign In…" : "Sign In to \(needing.count)…") {
+                            Task {
+                                do { try await model.beginMcpSignIn(needing.map { McpSignInStep(profile: current, serverName: $0.name) }) }
+                                catch { actionError = error.localizedDescription }
+                            }
+                        }
+                    }
+                }
+                if !needing.isEmpty {
+                    Text("Waiting for a sign-in: " + needing.map(\.displayName).joined(separator: ", "))
+                        .font(.meta).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                if !connectors.isEmpty {
+                    Text("\(connectors.count) claude.ai connector\(connectors.count == 1 ? "" : "s") of this account can be signed in from the MCP Servers page; their sign-in finishes on claude.ai.")
+                        .font(.meta).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            } else if model.mcpStore.refreshing.contains(current.id) {
+                HStack(spacing: Space.xs) {
+                    ProgressView().controlSize(.small)
+                    Text("Asking Claude Code for this profile's servers…").font(.rowDetail).foregroundStyle(.secondary)
+                }
+            } else {
+                HStack {
+                    Text(model.mcpStore.errors[current.id] ?? "Not checked yet. Checking starts each server once to see whether it connects.")
+                        .font(.rowDetail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button("Check Now") { Task { await model.refreshMcp(current) } }
+                        .disabled(model.binary == nil)
+                }
+            }
         }
     }
 

@@ -18,6 +18,7 @@ struct UISnapshotTests {
         let temp = try TempDirectory()
         let model = try SampleData.model(temp: temp)
         try await SampleData.addLiveSamples(model, temp: temp)
+        SampleData.addMcpSamples(model)
         // Read-only: link the real claude binary into the temp home (so screens show ~/.local/bin/claude,
         // not the real home folder) and run the shell probes.
         let realHome = FileManager.default.homeDirectoryForCurrentUser
@@ -87,6 +88,26 @@ struct UISnapshotTests {
         try await capture(SignInSheet(profile: personal), model: model, name: "sheet-signin", size: NSSize(width: 600, height: 520), dark: false, panel: true)
         try await capture(SignInSheet(profile: personal), model: model, name: "sheet-signin-dark", size: NSSize(width: 600, height: 520), dark: true, panel: true)
         flow.cancel()
+        // MCP: Add Server, and a sign-in for three profiles waiting on the first (see McpLoginFlowTests).
+        for dark in [false, true] {
+            try await capture(McpAddServerSheet(), model: model, name: "sheet-mcp-add\(dark ? "-dark" : "")", size: NSSize(width: 640, height: 640), dark: dark, panel: true)
+        }
+        let mcpFake = temp.file("fake-mcp-bin/claude")
+        try FileManager.default.createDirectory(at: mcpFake.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(McpLoginFlowTests.fakeClaude.utf8).write(to: mcpFake)
+        chmod(mcpFake.path, 0o755)
+        let mcpBinary = ClaudeBinary(path: mcpFake.path, source: .userOverride, version: "test")
+        // A fresh queue per capture: closing a capture window cancels the sheet's queue.
+        for dark in [false, true] {
+            let queue = McpSignInQueue(steps: model.profiles.prefix(3).map { McpSignInStep(profile: $0, serverName: "cloudflare-api") }) { step in
+                McpLoginFlow(profile: step.profile, serverName: step.serverName, binary: mcpBinary, home: model.paths.userHome,
+                             environment: ChildEnvironment.claude(home: model.paths.userHome, binary: mcpBinary, configDir: step.profile.configDirEnvironmentValue)) { _, _ in nil }
+            }
+            queue.start()
+            for _ in 0..<40 where queue.flow?.phase != .waitingForAuthorization { try await Task.sleep(for: .milliseconds(100)) }
+            try await capture(McpSignInSheet(queue: queue), model: model, name: "sheet-mcp-signin\(dark ? "-dark" : "")", size: NSSize(width: 640, height: 640), dark: dark, panel: true)
+            queue.cancel()
+        }
         if let session = model.sessionStore.sessions.first(where: { $0.profileID == model.profiles[0].id }) {
             for dark in [false, true] {
                 try await capture(HandoffSheet(request: HandoffRequest(session: session, target: model.profiles[1])), model: model,
@@ -123,6 +144,7 @@ enum SampleData {
             (.sessions, "sessions"),
             (.analytics, "analytics"),
             (.statusline, "statusline"),
+            (.mcp, "mcp"),
             (.profile(model.profiles[1].id), "profile-work"),
             (.profile(model.profiles[3].id), "profile-client"),
             (.diagnostics, "diagnostics"),
@@ -210,6 +232,45 @@ enum SampleData {
 extension SampleData {
     /// Running sessions (this test process stands in for claude), 30 days of conversation records,
     /// and a managed status line, all inside the temp home.
+    /// MCP servers as `claude mcp list` would report them: shared servers in various sign-in states,
+    /// plugin servers, and claude.ai connectors that differ by account.
+    static func addMcpSamples(_ model: AppModel) {
+        let profiles = model.profiles
+        func remote(_ name: String, _ url: String, _ health: McpServer.Health) -> McpServer {
+            McpServer(name: name, target: url, transport: "HTTP", health: health)
+        }
+        let signedIn: [Int: Set<String>] = [
+            0: ["cloudflare-api", "neon", "aws-mcp", "polar", "plugin:engineering:linear", "mobbin"],
+            1: ["cloudflare-api", "neon", "plugin:engineering:linear"],
+            2: ["cloudflare-api"],
+            3: [],
+            4: [],
+        ]
+        for (index, profile) in profiles.enumerated() {
+            let mine = signedIn[index] ?? []
+            func state(_ name: String) -> McpServer.Health { mine.contains(name) ? .connected : .needsSignIn }
+            var list = [
+                remote("cloudflare-api", "https://mcp.cloudflare.com/mcp", state("cloudflare-api")),
+                remote("aws-mcp", "https://aws-mcp.us-east-1.api.aws/mcp", state("aws-mcp")),
+                remote("neon", "https://mcp.neon.tech/mcp", state("neon")),
+                remote("polar", "https://mcp.polar.sh/mcp/polar-mcp", state("polar")),
+                remote("mobbin", "https://api.mobbin.com/mcp", state("mobbin")),
+                remote("whatsapp_business_tools", "https://mcp.facebook.com/whatsapp_business_tools", state("whatsapp_business_tools")),
+                McpServer(name: "cap", target: "cap", transport: nil, health: .connected),
+                McpServer(name: "rea", target: "npx", transport: nil, health: index == 3 ? .failed("connection timed out after 30000ms") : .connected),
+                remote("plugin:engineering:linear", "https://mcp.linear.app/mcp", state("plugin:engineering:linear")),
+                remote("plugin:figma:figma", "https://mcp.figma.com/mcp", state("plugin:figma:figma")),
+            ]
+            if index < 3 {
+                list.append(McpServer(name: "claude.ai Claude Docs", target: "https://api.example.com/v1/pages/mcp", transport: nil, health: .connected))
+            }
+            if index == 0 {
+                list.append(McpServer(name: "claude.ai Mobbin", target: "https://api.mobbin.com/mcp", transport: nil, health: .needsSignIn))
+            }
+            model.mcpStore.record(list, for: profile.id, at: Date().addingTimeInterval(-90))
+        }
+    }
+
     static func addLiveSamples(_ model: AppModel, temp: TempDirectory) async throws {
         let profiles = model.profiles
         let defaultProfile = profiles[0], work = profiles[1], personal = profiles[2]

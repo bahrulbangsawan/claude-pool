@@ -24,6 +24,7 @@ struct ManagerWindow: View {
         .sheet(item: $model.trackingRequest) { TrackingConfirmSheet(request: $0) }
         .sheet(isPresented: $showingAdd) { AddAccountSheet() }
         .sheet(item: $model.signInRequest) { SignInSheet(profile: $0) }
+        .sheet(item: $model.mcpSignIn) { McpSignInSheet(queue: $0) }
         .sheet(isPresented: $showingAdopt) { AdoptExistingSheet() }
         .sheet(item: $deleting) { DeleteProfileSheet(profile: $0) }
         .task { await model.managerWindowOpened() }
@@ -51,6 +52,10 @@ struct ManagerWindow: View {
                 .tag(ManagerRoute.analytics)
             Label("Status Line", systemImage: "rectangle.bottomthird.inset.filled")
                 .tag(ManagerRoute.statusline)
+            Label("MCP Servers", systemImage: "puzzlepiece.extension")
+                .badge(model.pendingMcpSignIns.count)
+                .tag(ManagerRoute.mcp)
+                .help("MCP servers of every profile and their sign-ins")
 
             Section("Profiles") {
                 ForEach(model.profiles) { profile in
@@ -117,6 +122,8 @@ struct ManagerWindow: View {
             AnalyticsView()
         case .statusline:
             StatuslineView()
+        case .mcp:
+            McpServersView()
         case let .profile(id):
             if let profile = model.profileStore.profile(id: id) {
                 ProfileDetailView(profile: profile, onRemove: { deleting = profile })

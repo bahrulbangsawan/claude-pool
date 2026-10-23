@@ -16,6 +16,7 @@ final class AppModel {
     let sessionStore: SessionStore
     let analyticsStore: AnalyticsStore
     let statuslineStore: StatuslineStore
+    let mcpStore: McpStore
     let resourceStore = ResourceStore()
 
     private(set) var binary: ClaudeBinary?
@@ -44,6 +45,8 @@ final class AppModel {
     var loginFlow: LoginFlow?
     /// Asks the manager window to show the in-app sign-in for this profile.
     var signInRequest: Profile?
+    /// The MCP server sign-ins currently shown, if any.
+    var mcpSignIn: McpSignInQueue?
     /// Last pointer value read back after a switch (nil = Default); `pointerError` if unreadable.
     private(set) var pointerOnDisk: String?
     private(set) var pointerError: String?
@@ -81,6 +84,7 @@ final class AppModel {
         sessionStore = SessionStore()
         analyticsStore = AnalyticsStore(indexURL: paths.appSupport.appendingPathComponent("usage-index.sqlite"))
         statuslineStore = StatuslineStore(pool: paths.pool, presetsFile: paths.appSupport.appendingPathComponent("statusline-presets.json"))
+        mcpStore = McpStore(service: McpService(home: paths.userHome, loginShell: loginShell))
         shell = ShellIntegrationService(home: paths.userHome, loginShell: loginShell)
         launcher = TerminalLauncher(paths: paths)
         patcher = SettingsPatcher(pool: paths.pool)
@@ -391,6 +395,110 @@ final class AppModel {
         syncStatuslineContext()
     }
 
+    // MARK: MCP servers
+
+    /// Checks the profiles whose server list is missing or a few minutes old (MCP Servers page).
+    func refreshMcpIfStale() async {
+        guard liveChecksEnabled else { return }
+        await mcpStore.refreshIfStale(profiles, binary: await resolvedBinary())
+    }
+
+    /// Checks every profile's servers again, or only `profile`'s.
+    func refreshMcp(_ profile: Profile? = nil) async {
+        let binary = await resolvedBinary()
+        if let profile { await mcpStore.refresh(profile, binary: binary) }
+        else { await mcpStore.refreshAll(profiles, binary: binary) }
+    }
+
+    /// Profile × server pairs waiting for a sign-in, server by server.
+    var pendingMcpSignIns: [McpSignInStep] { mcpStore.pendingSignIns(for: profiles) }
+
+    /// Shows the MCP sign-in sheet and starts the first of `steps`; see `McpSignInQueue`.
+    func beginMcpSignIn(_ steps: [McpSignInStep]) async throws {
+        guard !steps.isEmpty else { return }
+        guard let binary = await resolvedBinary() else { throw AppModelError.binaryMissing }
+        mcpSignIn?.cancel()
+        let home = paths.userHome
+        var environments: [UUID: [String: String]] = [:]
+        for profile in steps.map(\.profile) where environments[profile.id] == nil {
+            environments[profile.id] = await mcpStore.service.environment(for: profile, binary: binary)
+        }
+        let queue = McpSignInQueue(steps: steps) { [weak self] step in
+            McpLoginFlow(profile: step.profile, serverName: step.serverName, binary: binary, home: home,
+                         environment: environments[step.profile.id] ?? [:]) { profile, name in
+                await self?.mcpStore.recheck(name, on: profile, binary: binary)
+            }
+        }
+        mcpSignIn = queue
+        queue.start()
+    }
+
+    struct McpAddResult {
+        /// Profiles where the new server waits for a sign-in.
+        var needingSignIn: [Profile] = []
+        /// "Work: <reason>" for each profile where adding failed.
+        var failures: [String] = []
+    }
+
+    /// Adds a remote server with Claude Code's `claude mcp add --scope user` to each of `targets`
+    /// (every profile while Shared Extensions is on, which would copy it everywhere anyway), then
+    /// reads its state back from each.
+    func addMcpServer(name: String, url: String, transport: McpTransport, to targets: [Profile]) async throws -> McpAddResult {
+        guard let binary = await resolvedBinary() else { throw AppModelError.binaryMissing }
+        let targets = settings.shareExtensions ? profiles : targets
+        var result = McpAddResult()
+        var added: [Profile] = []
+        for profile in targets {
+            do {
+                _ = try await mcpStore.service.add(name: name, url: url, transport: transport, profile: profile, binary: binary)
+                added.append(profile)
+            } catch {
+                result.failures.append("\(profile.name): \(error.localizedDescription)")
+            }
+        }
+        if added.isEmpty, let first = result.failures.first { throw McpServiceError.failed(first) }
+        // Read the new server back from every profile at once (`claude mcp get` checks it).
+        let service = mcpStore.service
+        var states: [UUID: McpServer] = [:]
+        await withTaskGroup(of: (Profile, McpServer?).self) { group in
+            for profile in added {
+                group.addTask { (profile, (try? await service.get(name, profile: profile, binary: binary)) ?? nil) }
+            }
+            for await (profile, server) in group {
+                states[profile.id] = server
+                mcpStore.apply(server, named: name, for: profile.id)
+            }
+        }
+        result.needingSignIn = added.filter { states[$0.id]?.health == .needsSignIn }
+        syncSharedExtensions()
+        return result
+    }
+
+    /// Removes a server you added from each of `targets` (every profile while Shared Extensions is
+    /// on, so the sync doesn't bring it back).
+    func removeMcpServer(_ name: String, from targets: [Profile]) async throws {
+        guard let binary = await resolvedBinary() else { throw AppModelError.binaryMissing }
+        let targets = settings.shareExtensions ? profiles : targets
+        var failures: [String] = []
+        for profile in targets {
+            do { try await mcpStore.remove(name, from: profile, binary: binary) }
+            catch { failures.append("\(profile.name): \(error.localizedDescription)") }
+        }
+        syncSharedExtensions()
+        if !failures.isEmpty { throw McpServiceError.failed(failures.joined(separator: "\n")) }
+    }
+
+    /// Has Claude Code forget the server's sign-in in each of `targets`.
+    func signOutMcpServer(_ name: String, on targets: [Profile]) async throws {
+        guard let binary = await resolvedBinary() else { throw AppModelError.binaryMissing }
+        var failures: [String] = []
+        for profile in targets {
+            do { try await mcpStore.signOut(name, on: profile, binary: binary) }
+            catch { failures.append("\(profile.name): \(error.localizedDescription)") }
+        }
+        if !failures.isEmpty { throw McpServiceError.failed(failures.joined(separator: "\n")) }
+    }
+
     // MARK: Usage tracking opt-in
 
     var collectorPath: String { paths.pool.installedCollector.path }
@@ -613,7 +721,9 @@ final class AppModel {
         alertTracker.forget(profile.id)
         authStore.forget(profile.id)
         statuslineStore.forget(profile.id)
+        mcpStore.forget(profile.id)
         if loginFlow?.profile.id == profile.id { loginFlow?.cancel(); loginFlow = nil }
+        if mcpSignIn?.steps.contains(where: { $0.profile.id == profile.id }) == true { mcpSignIn?.cancel(); mcpSignIn = nil }
         trackingStates[profile.id] = nil
         if route == .profile(profile.id) { route = .overview }
     }
@@ -753,6 +863,7 @@ enum ManagerRoute: Hashable {
     case sessions
     case analytics
     case statusline
+    case mcp
     case profile(UUID)
     case diagnostics
     case settings
